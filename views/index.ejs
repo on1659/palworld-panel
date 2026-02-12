@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>팰월드 서버 패널</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 50%, #0f0f23 100%); min-height: 100vh; }
+    .glow-card { background: rgba(17, 17, 40, 0.8); border: 1px solid rgba(99, 102, 241, 0.2); backdrop-filter: blur(10px); }
+    .glow-card:hover { border-color: rgba(99, 102, 241, 0.4); }
+    .btn-glow { transition: all 0.2s; }
+    .btn-glow:hover { box-shadow: 0 0 20px rgba(99, 102, 241, 0.3); transform: translateY(-1px); }
+    .status-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+    .status-dot.online { background: #22c55e; box-shadow: 0 0 10px #22c55e; animation: pulse-green 2s infinite; }
+    .status-dot.offline { background: #ef4444; box-shadow: 0 0 10px #ef4444; }
+    @keyframes pulse-green { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .slider-custom { -webkit-appearance: none; appearance: none; height: 6px; border-radius: 3px; background: #374151; outline: none; }
+    .slider-custom::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #6366f1; cursor: pointer; box-shadow: 0 0 10px rgba(99,102,241,0.5); }
+    .slider-custom::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: #6366f1; cursor: pointer; border: none; }
+    .log-container { font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; }
+    .toast { animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s; }
+    @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+    .tab-btn.active { background: rgba(99, 102, 241, 0.3); border-color: #6366f1; color: white; }
+    input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
+  </style>
+</head>
+<body class="text-gray-200">
+  <!-- Toast container -->
+  <div id="toasts" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+  <!-- Restart banner -->
+  <div id="restart-banner" class="hidden fixed top-0 left-0 right-0 bg-amber-600/90 text-white text-center py-2 text-sm z-40 backdrop-blur">
+    ⚠️ 설정이 변경되었습니다. 서버를 재시작해야 적용됩니다.
+    <button onclick="serverAction('restart')" class="ml-3 px-3 py-1 bg-white/20 rounded hover:bg-white/30 text-sm">지금 재시작</button>
+  </div>
+
+  <!-- Header -->
+  <header class="border-b border-gray-700/50 bg-gray-900/50 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="text-2xl">🎮</span>
+        <h1 class="text-xl font-bold text-white">팰월드 서버 패널</h1>
+      </div>
+      <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2" id="status-display">
+          <span class="status-dot <%= running ? 'online' : 'offline' %>"></span>
+          <span class="text-sm"><%= running ? '실행 중' : '정지' %></span>
+        </div>
+        <a href="/logout" class="text-gray-400 hover:text-white text-sm">로그아웃</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-6">
+    <!-- Server controls -->
+    <div class="glow-card rounded-2xl p-6 mb-6">
+      <h2 class="text-lg font-semibold text-white mb-4">🖥️ 서버 관리</h2>
+      <div class="flex flex-wrap gap-3 mb-4">
+        <button onclick="serverAction('start')" class="btn-glow px-5 py-2.5 bg-green-600 hover:bg-green-500 text-white rounded-xl font-medium text-sm">
+          ▶️ 시작
+        </button>
+        <button onclick="serverAction('stop')" class="btn-glow px-5 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl font-medium text-sm">
+          ⏹️ 정지
+        </button>
+        <button onclick="serverAction('restart')" class="btn-glow px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-medium text-sm">
+          🔄 재시작
+        </button>
+      </div>
+      <!-- Logs -->
+      <details class="group">
+        <summary class="cursor-pointer text-gray-400 hover:text-gray-300 text-sm select-none">📋 서버 로그 (최근 50줄)</summary>
+        <div class="mt-3 bg-black/50 rounded-xl p-4 max-h-64 overflow-y-auto log-container" id="log-container">
+          <div id="logs" class="text-green-400 whitespace-pre-wrap">로그를 불러오는 중...</div>
+        </div>
+      </details>
+    </div>
+
+    <!-- Settings -->
+    <div class="glow-card rounded-2xl p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-white">⚙️ 서버 설정</h2>
+        <button onclick="saveSettings()" id="save-btn"
+          class="btn-glow px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium text-sm">
+          💾 설정 저장
+        </button>
+      </div>
+      <p class="text-xs text-gray-500 mb-4">📁 <%= settingsPath %></p>
+
+      <% if (!settings) { %>
+        <div class="bg-red-500/20 border border-red-500/50 text-red-300 px-4 py-3 rounded-lg">
+          ⚠️ 설정 파일을 읽을 수 없습니다. 경로를 확인하세요.
+        </div>
+      <% } else { %>
+        <!-- Category tabs -->
+        <div class="flex flex-wrap gap-2 mb-6 border-b border-gray-700/50 pb-4">
+          <% categories.forEach((cat, i) => { %>
+            <button onclick="switchTab('<%= cat %>')"
+              class="tab-btn px-4 py-2 rounded-lg text-sm border border-gray-600 text-gray-400 hover:text-white hover:border-gray-400 transition <%= i === 0 ? 'active' : '' %>"
+              data-tab="<%= cat %>">
+              <%= cat %>
+            </button>
+          <% }) %>
+        </div>
+
+        <!-- Settings form -->
+        <form id="settings-form">
+          <% categories.forEach((cat, i) => { %>
+            <div class="tab-content <%= i === 0 ? '' : 'hidden' %>" data-tab="<%= cat %>">
+              <div class="grid gap-4 md:grid-cols-2">
+                <% defs.filter(d => d.category === cat).forEach(def => { %>
+                  <% const val = settings[def.key] !== undefined ? settings[def.key] : def.default; %>
+                  <div class="bg-gray-800/50 rounded-xl p-4">
+                    <div class="flex items-start justify-between mb-1">
+                      <label class="text-sm font-medium text-gray-200"><%= def.label %></label>
+                      <% if (def.type === 'slider') { %>
+                        <span class="text-indigo-400 font-mono text-sm" id="val-<%= def.key %>"><%= val %></span>
+                      <% } %>
+                    </div>
+                    <p class="text-xs text-gray-500 mb-2"><%= def.desc %></p>
+
+                    <% if (def.type === 'slider') { %>
+                      <input type="range" name="<%= def.key %>" value="<%= val %>"
+                        min="<%= def.min %>" max="<%= def.max %>" step="<%= def.step %>"
+                        class="w-full slider-custom"
+                        oninput="document.getElementById('val-<%= def.key %>').textContent=this.value">
+
+                    <% } else if (def.type === 'boolean') { %>
+                      <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" name="<%= def.key %>" class="sr-only peer"
+                          <%= (String(val) === 'True' || val === true) ? 'checked' : '' %>>
+                        <div class="w-11 h-6 bg-gray-600 peer-focus:ring-2 peer-focus:ring-indigo-500 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                      </label>
+
+                    <% } else if (def.type === 'select') { %>
+                      <select name="<%= def.key %>"
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        <% def.options.forEach(opt => { %>
+                          <option value="<%= opt %>" <%= String(val) === opt ? 'selected' : '' %>><%= opt %></option>
+                        <% }) %>
+                      </select>
+
+                    <% } else if (def.type === 'number') { %>
+                      <input type="number" name="<%= def.key %>" value="<%= val %>"
+                        <% if (def.min !== undefined) { %>min="<%= def.min %>"<% } %>
+                        <% if (def.max !== undefined) { %>max="<%= def.max %>"<% } %>
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+
+                    <% } else { %>
+                      <input type="text" name="<%= def.key %>" value="<%= val %>"
+                        class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <% } %>
+                  </div>
+                <% }) %>
+              </div>
+            </div>
+          <% }) %>
+        </form>
+      <% } %>
+    </div>
+  </main>
+
+  <footer class="text-center py-6 text-gray-600 text-xs">
+    Palworld Server Panel v1.0
+  </footer>
+
+  <script>
+    // Tabs
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('hidden', c.dataset.tab !== tab));
+    }
+
+    // Toast
+    function showToast(msg, type = 'success') {
+      const colors = { success: 'bg-green-600', error: 'bg-red-600', warning: 'bg-amber-600' };
+      const div = document.createElement('div');
+      div.className = `toast ${colors[type]} text-white px-4 py-2 rounded-lg shadow-lg text-sm`;
+      div.textContent = msg;
+      document.getElementById('toasts').appendChild(div);
+      setTimeout(() => div.remove(), 3000);
+    }
+
+    // Server actions
+    async function serverAction(action) {
+      try {
+        const res = await fetch(`/api/server/${action}`, { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'error');
+        if (action === 'restart') document.getElementById('restart-banner').classList.add('hidden');
+        setTimeout(refreshStatus, 2000);
+      } catch (e) {
+        showToast('요청 실패: ' + e.message, 'error');
+      }
+    }
+
+    // Save settings
+    async function saveSettings() {
+      const form = document.getElementById('settings-form');
+      const data = {};
+      form.querySelectorAll('input, select').forEach(el => {
+        if (el.type === 'checkbox') data[el.name] = el.checked;
+        else data[el.name] = el.value;
+      });
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        if (result.success) {
+          showToast('설정이 저장되었습니다!');
+          if (result.needRestart) {
+            document.getElementById('restart-banner').classList.remove('hidden');
+          }
+        } else {
+          showToast(result.error || '저장 실패', 'error');
+        }
+      } catch (e) {
+        showToast('저장 실패: ' + e.message, 'error');
+      }
+    }
+
+    // Refresh status & logs
+    async function refreshStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        const dot = document.querySelector('.status-dot');
+        const label = dot.nextElementSibling;
+        dot.className = `status-dot ${data.running ? 'online' : 'offline'}`;
+        label.textContent = data.running ? '실행 중' : '정지';
+        document.getElementById('logs').textContent = data.logs.length ? data.logs.join('\n') : '로그가 없습니다.';
+        const lc = document.getElementById('log-container');
+        lc.scrollTop = lc.scrollHeight;
+      } catch {}
+    }
+
+    refreshStatus();
+    setInterval(refreshStatus, 5000);
+  </script>
+</body>
+</html>

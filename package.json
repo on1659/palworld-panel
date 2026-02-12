@@ -1,0 +1,15 @@
+{
+  "name": "palworld-panel",
+  "version": "1.0.0",
+  "description": "팰월드 서버 관리 웹 패널",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.10",
+    "express": "^4.21.0",
+    "express-session": "^1.18.0"
+  }
+}
