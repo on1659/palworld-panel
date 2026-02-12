@@ -3,7 +3,7 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const fs = require('fs');
-const { spawn, execSync } = require('child_process');
+const { spawn, execSync, spawnSync } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,6 +15,8 @@ const SETTINGS_PATH = process.env.PAL_SETTINGS_PATH || DEFAULT_SETTINGS_PATH;
 const SERVER_PATH = process.env.PAL_SERVER_PATH || DEFAULT_SERVER_PATH;
 const SERVER_ARGS = (process.env.PAL_SERVER_ARGS || '-useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS').split(' ').filter(Boolean);
 const PANEL_PASSWORD = process.env.PANEL_PASSWORD || 'admin';
+const PAL_SAVE_PATH = process.env.PAL_SAVE_PATH || '';
+const PAL_BACKUP_ROOT = process.env.PAL_BACKUP_ROOT || '';
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -157,16 +159,28 @@ function addLog(line) {
   if (serverLogs.length > MAX_LOG_LINES) serverLogs.shift();
 }
 
+function getPalServerPids() {
+  if (process.platform !== 'win32') return [];
+  const pids = [];
+  try {
+    const out = execSync('tasklist /FO CSV /NH', { encoding: 'utf8', windowsHide: true });
+    for (const line of out.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.indexOf('PalServer') === -1) continue;
+      const parts = trimmed.split('","');
+      if (parts.length >= 2) {
+        const pid = parts[1].replace(/^"|"/g, '').trim();
+        if (/^\d+$/.test(pid)) pids.push(pid);
+      }
+    }
+  } catch (_) {}
+  return pids;
+}
+
 function isServerRunning() {
   if (process.platform === 'win32') {
-    try {
-      const result = execSync('tasklist /FI "IMAGENAME eq PalServer-Win64-Test-Cmd.exe" /NH', { encoding: 'utf-8' });
-      if (result.includes('PalServer')) return true;
-    } catch {}
-    try {
-      const result = execSync('tasklist /FI "IMAGENAME eq PalServer.exe" /NH', { encoding: 'utf-8' });
-      if (result.includes('PalServer')) return true;
-    } catch {}
+    const pids = getPalServerPids();
+    if (pids.length > 0) return true;
   }
   return serverProcess !== null && serverProcess.exitCode === null;
 }
@@ -196,15 +210,88 @@ function startServer() {
   }
 }
 
+function runBackup() {
+  if (process.platform !== 'win32') return { success: false, message: '백업은 Windows에서만 지원됩니다.' };
+  if (!PAL_SAVE_PATH || !PAL_BACKUP_ROOT) {
+    return { success: false, message: '.env에 PAL_SAVE_PATH, PAL_BACKUP_ROOT를 설정하세요.' };
+  }
+  if (!fs.existsSync(PAL_SAVE_PATH)) {
+    return { success: false, message: '세이브 경로가 없습니다: ' + PAL_SAVE_PATH };
+  }
+  try {
+    if (!fs.existsSync(PAL_BACKUP_ROOT)) fs.mkdirSync(PAL_BACKUP_ROOT, { recursive: true });
+    const ts = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
+    const dest = path.join(PAL_BACKUP_ROOT, `PalServerSave_${ts}`);
+    if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true });
+    fs.mkdirSync(dest, { recursive: true });
+    addLog('백업 시작: ' + dest);
+    const r = spawnSync('robocopy', [
+      PAL_SAVE_PATH, dest,
+      '/E', '/Z', '/COPY:DAT', '/R:2', '/W:2', '/XJ', '/NFL', '/NDL', '/NP'
+    ], { encoding: 'utf8', windowsHide: true });
+    const robocopyExit = r.status != null ? r.status : -1;
+    if (robocopyExit >= 8) {
+      addLog('백업 실패 (robocopy 코드: ' + robocopyExit + ')');
+      return { success: false, message: '백업 실패. robocopy 코드: ' + robocopyExit };
+    }
+    addLog('백업 완료: ' + dest);
+    deleteOldBackups();
+    return { success: true, message: '백업 완료: ' + dest, path: dest };
+  } catch (e) {
+    addLog('백업 실패: ' + e.message);
+    return { success: false, message: '백업 실패: ' + e.message };
+  }
+}
+
+const BACKUP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const AUTO_BACKUP_INTERVAL_MS = 3 * 60 * 60 * 1000;
+
+function deleteOldBackups() {
+  if (!PAL_BACKUP_ROOT || !fs.existsSync(PAL_BACKUP_ROOT)) return;
+  const now = Date.now();
+  let entries;
+  try {
+    entries = fs.readdirSync(PAL_BACKUP_ROOT, { withFileTypes: true });
+  } catch (_) { return; }
+  for (const e of entries) {
+    if (!e.isDirectory() || !e.name.startsWith('PalServerSave_')) continue;
+    const full = path.join(PAL_BACKUP_ROOT, e.name);
+    try {
+      const stat = fs.statSync(full);
+      if (now - stat.mtimeMs > BACKUP_MAX_AGE_MS) {
+        fs.rmSync(full, { recursive: true });
+        addLog('오래된 백업 삭제 (24h 초과): ' + e.name);
+      }
+    } catch (_) {}
+  }
+}
+
+function runScheduledBackup() {
+  deleteOldBackups();
+  if (isServerRunning() && PAL_SAVE_PATH && PAL_BACKUP_ROOT && fs.existsSync(PAL_SAVE_PATH)) {
+    addLog('[자동백업] 3시간 주기 실행');
+    runBackup();
+  }
+}
+
 function stopServer() {
   if (!isServerRunning()) return { success: false, message: '서버가 실행 중이 아닙니다.' };
   try {
     addLog('서버 정지 중...');
     if (process.platform === 'win32') {
-      execSync('taskkill /IM PalServer-Win64-Test-Cmd.exe /F', { encoding: 'utf-8' });
+      const pids = getPalServerPids();
+      for (const pid of pids) {
+        try {
+          execSync(`taskkill /PID ${pid} /F`, { encoding: 'utf8', windowsHide: true });
+          addLog(`PID ${pid} 종료됨`);
+        } catch (err) {
+          addLog(`PID ${pid} 종료 시도 실패 (이미 종료됐을 수 있음)`);
+        }
+      }
+      if (pids.length === 0) addLog('실행 중인 PalServer 프로세스 없음');
     }
     if (serverProcess) {
-      serverProcess.kill('SIGTERM');
+      try { serverProcess.kill('SIGTERM'); } catch (_) {}
       serverProcess = null;
     }
     addLog('서버 정지 완료');
@@ -283,6 +370,13 @@ app.post('/api/server/restart', requireAuth, async (req, res) => {
   res.json(startServer());
 });
 
+app.post('/api/backup/now', requireAuth, (req, res) => res.json(runBackup()));
+
 app.listen(PORT, () => {
   console.log(`🎮 팰월드 서버 패널 실행 중: http://localhost:${PORT}`);
+  if (PAL_BACKUP_ROOT) {
+    setTimeout(runScheduledBackup, 60 * 1000);
+    setInterval(runScheduledBackup, AUTO_BACKUP_INTERVAL_MS);
+    console.log('⏱️ 자동 백업: 서버 켜져 있을 때 3시간마다 실행, 24시간 지난 백업 자동 삭제');
+  }
 });

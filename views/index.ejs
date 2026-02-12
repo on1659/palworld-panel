@@ -24,6 +24,7 @@
     @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
     .tab-btn.active { background: rgba(99, 102, 241, 0.3); border-color: #6366f1; color: white; }
     input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
+    .setting-card.changed { border: 1px solid rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.08); }
   </style>
 </head>
 <body class="text-gray-200">
@@ -67,6 +68,9 @@
         <button onclick="serverAction('restart')" class="btn-glow px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-medium text-sm">
           🔄 재시작
         </button>
+        <button onclick="runBackup()" class="btn-glow px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-xl font-medium text-sm">
+          💾 백업하기
+        </button>
       </div>
       <!-- Logs -->
       <details class="group">
@@ -87,6 +91,12 @@
         </button>
       </div>
       <p class="text-xs text-gray-500 mb-4">📁 <%= settingsPath %></p>
+
+      <div id="unsaved-banner" class="hidden mb-4 p-4 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-200 text-sm">
+        <div class="font-medium mb-1">⚠️ 저장하지 않은 변경사항이 있습니다</div>
+        <p class="text-amber-200/90 text-xs mb-2">아래 설정들은 저장해야 서버에 적용됩니다.</p>
+        <div id="unsaved-list" class="flex flex-wrap gap-2 text-xs"></div>
+      </div>
 
       <% if (!settings) { %>
         <div class="bg-red-500/20 border border-red-500/50 text-red-300 px-4 py-3 rounded-lg">
@@ -111,20 +121,25 @@
               <div class="grid gap-4 md:grid-cols-2">
                 <% defs.filter(d => d.category === cat).forEach(def => { %>
                   <% const val = settings[def.key] !== undefined ? settings[def.key] : def.default; %>
-                  <div class="bg-gray-800/50 rounded-xl p-4">
+                  <div class="setting-card bg-gray-800/50 rounded-xl p-4 transition-all" data-setting-key="<%= def.key %>" data-label="<%= def.label %>">
                     <div class="flex items-start justify-between mb-1">
                       <label class="text-sm font-medium text-gray-200"><%= def.label %></label>
                       <% if (def.type === 'slider') { %>
-                        <span class="text-indigo-400 font-mono text-sm" id="val-<%= def.key %>"><%= val %></span>
+                        <input type="number" name="<%= def.key %>" id="val-<%= def.key %>" value="<%= val %>"
+                          min="<%= def.min %>" max="<%= def.max %>" step="<%= def.step %>"
+                          class="slider-edit w-20 bg-gray-700 border border-gray-600 rounded-lg px-2 py-1 text-sm text-indigo-400 font-mono text-right focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                          data-slider-id="slider-<%= def.key %>" data-min="<%= def.min %>" data-max="<%= def.max %>"
+                          oninput="syncSliderFromEdit(this)">
                       <% } %>
                     </div>
                     <p class="text-xs text-gray-500 mb-2"><%= def.desc %></p>
 
                     <% if (def.type === 'slider') { %>
-                      <input type="range" name="<%= def.key %>" value="<%= val %>"
+                      <input type="range" id="slider-<%= def.key %>" value="<%= val %>"
                         min="<%= def.min %>" max="<%= def.max %>" step="<%= def.step %>"
                         class="w-full slider-custom"
-                        oninput="document.getElementById('val-<%= def.key %>').textContent=this.value">
+                        data-edit-id="val-<%= def.key %>"
+                        oninput="syncEditFromSlider(this)">
 
                     <% } else if (def.type === 'boolean') { %>
                       <label class="relative inline-flex items-center cursor-pointer">
@@ -166,6 +181,24 @@
   </footer>
 
   <script>
+    function syncEditFromSlider(sliderEl) {
+      const edit = document.getElementById(sliderEl.dataset.editId);
+      if (edit) edit.value = sliderEl.value;
+    }
+    function syncSliderFromEdit(editEl) {
+      const slider = document.getElementById(editEl.dataset.sliderId);
+      if (!slider) return;
+      const min = Number(slider.min);
+      const max = Number(slider.max);
+      const step = Number(slider.step) || 0.1;
+      let v = Number(editEl.value);
+      if (isNaN(v)) v = min;
+      v = Math.max(min, Math.min(max, v));
+      v = Math.round(v / step) * step;
+      editEl.value = v;
+      slider.value = v;
+    }
+
     // Tabs
     function switchTab(tab) {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -195,14 +228,81 @@
       }
     }
 
-    // Save settings
-    async function saveSettings() {
-      const form = document.getElementById('settings-form');
+    async function runBackup() {
+      try {
+        const res = await fetch('/api/backup/now', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'error');
+      } catch (e) {
+        showToast('백업 요청 실패: ' + e.message, 'error');
+      }
+    }
+
+    function getFormData(form) {
       const data = {};
       form.querySelectorAll('input, select').forEach(el => {
         if (el.type === 'checkbox') data[el.name] = el.checked;
         else data[el.name] = el.value;
       });
+      return data;
+    }
+
+    function getChangedKeys() {
+      const form = document.getElementById('settings-form');
+      if (!form) return [];
+      const current = getFormData(form);
+      const keys = [];
+      for (const k of Object.keys(initialSettings)) {
+        const a = initialSettings[k];
+        const b = current[k];
+        if (typeof a === 'boolean' || typeof b === 'boolean') {
+          if (a !== b) keys.push(k);
+        } else if (String(a) !== String(b)) {
+          keys.push(k);
+        }
+      }
+      return keys;
+    }
+
+    function updateUnsavedUI() {
+      const form = document.getElementById('settings-form');
+      if (!form) return;
+      const keys = getChangedKeys();
+      const banner = document.getElementById('unsaved-banner');
+      const listEl = document.getElementById('unsaved-list');
+      document.querySelectorAll('.setting-card').forEach(card => {
+        card.classList.toggle('changed', keys.includes(card.dataset.settingKey));
+      });
+      if (keys.length === 0) {
+        banner.classList.add('hidden');
+        return;
+      }
+      banner.classList.remove('hidden');
+      const labels = keys.map(k => {
+        const card = form.querySelector('[data-setting-key="' + k + '"]');
+        return card ? card.dataset.label || k : k;
+      });
+      listEl.textContent = '';
+      labels.forEach(l => {
+        const span = document.createElement('span');
+        span.className = 'px-2 py-1 rounded bg-amber-500/30 text-amber-200';
+        span.textContent = l;
+        listEl.appendChild(span);
+      });
+    }
+
+    let initialSettings = {};
+    (function initUnsavedTracking() {
+      const form = document.getElementById('settings-form');
+      if (!form) return;
+      initialSettings = getFormData(form);
+      form.addEventListener('input', updateUnsavedUI);
+      form.addEventListener('change', updateUnsavedUI);
+    })();
+
+    async function saveSettings() {
+      const form = document.getElementById('settings-form');
+      const data = getFormData(form);
       try {
         const res = await fetch('/api/settings', {
           method: 'POST',
@@ -211,6 +311,8 @@
         });
         const result = await res.json();
         if (result.success) {
+          initialSettings = getFormData(form);
+          updateUnsavedUI();
           showToast('설정이 저장되었습니다!');
           if (result.needRestart) {
             document.getElementById('restart-banner').classList.remove('hidden');

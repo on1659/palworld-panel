@@ -10,6 +10,7 @@
 - **설정 편집** - PalWorldSettings.ini를 슬라이더/토글/입력으로 편리하게 편집
 - **카테고리별 분류** - 기본설정, 전투, 캡처, 경험치/드랍, 생존, 길드, 기타
 - **실시간 로그** - 서버 로그 최근 50줄 표시
+- **백업** - 세이브 폴더를 robocopy로 타임스탬프 폴더에 백업 (Palback 방식). 서버 켜져 있을 때 **3시간마다 자동 백업**, **24시간 지난 백업 자동 삭제**
 - **비밀번호 보호** - 세션 기반 인증
 - **반응형 UI** - 모바일/태블릿 지원
 - **다크모드** - 게이밍 느낌의 UI
@@ -58,6 +59,8 @@ npm start
 | `PAL_SETTINGS_PATH` | PalWorldSettings.ini 경로 | Steam 기본 경로 |
 | `PAL_SERVER_PATH` | PalServer.exe 경로 | Steam 기본 경로 |
 | `PAL_SERVER_ARGS` | 서버 실행 인자 | `-useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS` |
+| `PAL_SAVE_PATH` | 세이브 폴더 전체 경로 (월드 폴더, 예: `...\SaveGames\0\286264E7...`) | (없으면 백업 버튼 사용 시 안내 메시지) |
+| `PAL_BACKUP_ROOT` | 백업을 저장할 폴더 경로 | (없으면 백업 버튼 사용 시 안내 메시지) |
 
 ## 📝 참고
 
