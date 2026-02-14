@@ -103,8 +103,8 @@
       </div>
       <div class="flex items-center gap-4">
         <div class="flex items-center gap-2" id="status-display">
-          <span class="status-dot <%= running ? 'online' : 'offline' %>"></span>
-          <span class="text-sm"><%= running ? '실행 중' : '정지' %></span>
+          <span id="server-status-dot" class="status-dot <%= running ? 'online' : 'offline' %>"></span>
+          <span id="server-status-label" class="text-sm"><%= running ? '실행 중' : '정지' %></span>
         </div>
         <a href="/logout" class="text-gray-400 hover:text-white text-sm">로그아웃</a>
       </div>
@@ -602,8 +602,8 @@
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
-        const dot = document.querySelector('.status-dot');
-        const label = dot.nextElementSibling;
+        const dot = document.getElementById('server-status-dot');
+        const label = document.getElementById('server-status-label');
         dot.className = `status-dot ${data.running ? 'online' : 'offline'}`;
         label.textContent = data.running ? '실행 중' : '정지';
         document.getElementById('logs').textContent = data.logs.length ? data.logs.join('\n') : '로그가 없습니다.';
@@ -751,17 +751,19 @@
       }
     }
 
-    // 초기 통계 로드
-    loadStats('players');
-
-    refreshStatus();
-    setInterval(refreshStatus, 5000);
-
-    // 통계 갱신
+    // 초기 로드
     let currentStatsTab = 'players';
     const _origSwitchTab = switchStatsTab;
     switchStatsTab = function(tab) { currentStatsTab = tab; _origSwitchTab(tab); };
-    setInterval(() => loadStats(currentStatsTab), 5 * 60 * 1000);
+
+    loadStats('players');
+    refreshStatus();
+
+    // 접속 현황 + 통계 동일 주기로 갱신 (5초)
+    setInterval(() => {
+      refreshStatus();
+      loadStats(currentStatsTab);
+    }, 5000);
 
     async function refreshStats() {
       const btn = document.getElementById('stats-refresh-btn');

@@ -26,6 +26,7 @@ const PLAYTIME_FILE = path.join(PLAYER_DATA_DIR, 'playtime.txt');
 const PANEL_SERVER_LOG_FILE = path.join(PLAYER_DATA_DIR, 'panel_server_log.txt');
 const DB_PATH = path.join(PLAYER_DATA_DIR, 'palworld.db');
 const PRESETS_DIR = path.join(PLAYER_DATA_DIR, 'presets');
+const PANEL_START_TIME = Date.now();
 
 // --- SQLite DB 초기화 ---
 if (!fs.existsSync(PLAYER_DATA_DIR)) fs.mkdirSync(PLAYER_DATA_DIR, { recursive: true });
@@ -256,6 +257,13 @@ function writeSettings(settings) {
   const dir = path.dirname(SETTINGS_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(SETTINGS_PATH, content, 'utf-8');
+}
+
+function getServerName() {
+  try {
+    const s = readSettings();
+    return (s && s.ServerName) || 'Palworld Server';
+  } catch { return 'Palworld Server'; }
 }
 
 // --- REST API Client (플레이어 접속 감지용) ---
@@ -963,7 +971,7 @@ async function stopServerWithNotice() {
   try {
     // Send announcement: 60초 후 종료
     addLog('[공지] 60초 후 서버가 종료됩니다...');
-    await restApiClient.announce('⚠️ 서버가 60초 후 종료됩니다. 안전한 장소에서 저장해주세요.');
+    await restApiClient.announce(`[${getServerName()}] ⚠️ 서버가 60초 후 종료됩니다. 안전한 장소에서 저장해주세요.`);
 
     // Wait 10 seconds, then call shutdown with 60s wait (but we'll actually force it)
     setTimeout(async () => {
@@ -1263,21 +1271,35 @@ app.get('/api/stats/player/:userId', requireAuth, (req, res) => {
 loadPlayerList();
 loadPlaytime();
 
-// --- 패널 시작 시 열린 세션에서 상태 복원 ---
-(function restoreOpenSessions() {
+// --- 패널 시작 시 DB에서 플레이어 이름 복원 & 열린 세션 정리 ---
+(function restoreFromDB() {
   try {
+    // 모든 플레이어 이름 복원
+    const allPlayers = db.prepare('SELECT userId, displayName FROM players WHERE displayName IS NOT NULL').all();
+    for (const p of allPlayers) {
+      if (p.displayName && p.displayName !== p.userId) {
+        playerNames[p.userId] = p.displayName;
+      }
+    }
+    if (allPlayers.length > 0) {
+      console.log(`👤 플레이어 이름 ${allPlayers.length}개 복원 완료`);
+    }
+
+    // 열린 세션 → 패널 시작 시점 기준으로 닫기 (실제 접속자는 즉시 pollRestApi에서 새 세션 생성)
     const openSessions = dbStmts.getOpenSessions.all();
     for (const s of openSessions) {
-      currentOnline.add(s.userId);
-      everConnected.add(s.userId);
-      joinTime[s.userId] = s.joinTime;
+      const mins = (PANEL_START_TIME - s.joinTime) / 60000;
+      dbStmts.closeSession.run(PANEL_START_TIME, mins, s.userId);
       if (s.displayName) playerNames[s.userId] = s.displayName;
+      everConnected.add(s.userId);
+      const name = playerNames[s.userId] || s.userId;
+      addLog(`[복원] ${name} 이전 세션 종료 (${mins.toFixed(1)}분)`);
     }
     if (openSessions.length > 0) {
-      console.log(`📋 열린 세션 ${openSessions.length}개 복원 완료`);
+      console.log(`📋 열린 세션 ${openSessions.length}개 → 패널 시작 시점 기준으로 종료 처리`);
     }
   } catch (e) {
-    console.error('세션 복원 실패:', e.message);
+    console.error('DB 복원 실패:', e.message);
   }
 })();
 
@@ -1340,6 +1362,15 @@ app.listen(PORT, () => {
   }
 
   // REST API polling for player detection
+  // 패널 시작 시 즉시 1회 폴링 (현재 접속자 파악)
+  setTimeout(async () => {
+    try {
+      await pollRestApi();
+      if (currentOnline.size > 0) {
+        console.log(`🔍 시작 시 접속자 감지: ${currentOnline.size}명 온라인`);
+      }
+    } catch (_) {}
+  }, 2000);
   setInterval(async () => {
     try {
       await pollRestApi();
@@ -1367,7 +1398,7 @@ app.listen(PORT, () => {
         notifiedHours[userId] = hoursPlayed;
         const name = playerNames[userId] || userId;
         try {
-          await restApiClient.announce(`${name}님 접속하신지 ${hoursPlayed}시간 지났습니다!`);
+          await restApiClient.announce(`[${getServerName()}] ${name}님 접속하신지 ${hoursPlayed}시간 지났습니다!`);
           addLog(`[알림] ${name}님 접속 ${hoursPlayed}시간 경과 공지`);
         } catch (e) {
           console.error('접속 시간 알림 실패:', e.message);
