@@ -1067,10 +1067,10 @@ async function getActiveSettings() {
   if (isServerRunning() && REST_API_ENABLED && restApiClient.isAvailable) {
     try {
       const liveSettings = await restApiClient.getSettings();
-      // REST API 값을 우선 적용 (ini 파일에 있는 키만)
-      for (const key of Object.keys(fileSettings)) {
-        if (liveSettings[key] !== undefined) {
-          fileSettings[key] = liveSettings[key];
+      // SETTING_DEFS에 정의된 모든 키에 대해 REST API 값 우선 적용
+      for (const def of SETTING_DEFS) {
+        if (liveSettings[def.key] !== undefined) {
+          fileSettings[def.key] = liveSettings[def.key];
         }
       }
     } catch (_) {}
