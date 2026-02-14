@@ -29,18 +29,32 @@ palworld-panel/
 └── package.json
 ```
 
+## 요구사항
+
+- **Windows 10/11** (PalServer.exe 프로세스 관리, robocopy 백업)
+- **Node.js 18+** ([다운로드](https://nodejs.org/))
+- **팰월드 전용 서버** (Steam 또는 SteamCMD로 설치)
+
 ## 설치 및 실행
 
-### 1. Node.js 설치
+### 1. 프로젝트 다운로드
 
-[Node.js 18+](https://nodejs.org/) 설치
+```bash
+git clone https://github.com/on1659/palworld-panel.git
+cd palworld-panel
+```
 
 ### 2. 의존성 설치
 
 ```bash
-git clone <repo-url>
-cd palworld-panel
 npm install
+```
+
+`better-sqlite3` (네이티브 모듈)가 포함되어 있어 빌드 도구가 필요할 수 있습니다.
+설치 중 에러가 나면 아래를 먼저 실행하세요:
+
+```bash
+npm install -g windows-build-tools
 ```
 
 ### 3. 환경변수 설정
@@ -49,15 +63,92 @@ npm install
 copy .env.example .env
 ```
 
-`.env` 파일을 열어 서버 경로와 비밀번호를 설정하세요.
+`.env` 파일을 메모장으로 열어 아래 항목들을 수정하세요:
 
-### 4. 실행
+```env
+# [필수] 패널 로그인 비밀번호 (기본값 admin → 반드시 변경)
+PANEL_PASSWORD=내비밀번호
+
+# [필수] PalServer.exe 경로 (패널에서 서버 시작/정지에 사용)
+PAL_SERVER_PATH=C:\Program Files (x86)\Steam\steamapps\common\PalServer\PalServer.exe
+
+# [필수] PalWorldSettings.ini 경로 (설정 편집에 사용)
+PAL_SETTINGS_PATH=C:\Program Files (x86)\Steam\steamapps\common\PalServer\Pal\Saved\Config\WindowsServer\PalWorldSettings.ini
+
+# [권장] REST API 비밀번호 (PalWorldSettings.ini의 AdminPassword와 동일하게)
+# 미설정 시 PANEL_PASSWORD 값을 사용
+REST_API_PASSWORD=내관리자비밀번호
+
+# [선택] 백업 활성화 (둘 다 설정해야 작동)
+PAL_SAVE_PATH=C:\Program Files (x86)\Steam\steamapps\common\PalServer\Pal\Saved\SaveGames\0\YOUR_WORLD_ID
+PAL_BACKUP_ROOT=D:\PalworldBackups
+```
+
+> `YOUR_WORLD_ID`는 `SaveGames\0\` 폴더 안에 있는 16자리 영숫자 폴더명입니다.
+> 예: `SaveGames\0\2F8A3B4C1D5E6F70`
+
+### 4. 팰월드 서버 REST API 활성화 (권장)
+
+PalWorldSettings.ini에서 아래 항목을 설정하세요 (또는 패널 설치 후 웹 UI에서 변경 가능):
+
+```ini
+RESTAPIEnabled=True
+RESTAPIPort=8212
+AdminPassword="내관리자비밀번호"
+```
+
+REST API를 활성화하면 다음 기능을 사용할 수 있습니다:
+- 실시간 접속자 감지 (5초 간격)
+- 인게임 공지 전송
+- 종료 전 플레이어 경고
+- 백업 전 월드 저장
+- 접속 시간 알림
+
+### 5. 실행
 
 ```bash
 npm start
 ```
 
-`http://localhost:3000` 으로 접속
+브라우저에서 `http://localhost:3000` 으로 접속하세요.
+`.env`에 설정한 `PANEL_PASSWORD`로 로그인합니다.
+
+### 6. (선택) 자동 시작 설정
+
+패널을 Windows 시작 시 자동으로 실행하려면:
+
+```bash
+# StartServer.bat 같은 배치 파일을 만들어 시작 프로그램에 등록
+cd /d "C:\경로\palworld-panel"
+node server.js
+```
+
+또는 `pm2`를 사용하면 백그라운드 실행 + 자동 재시작이 가능합니다:
+
+```bash
+npm install -g pm2
+pm2 start server.js --name palworld-panel
+pm2 save
+pm2 startup
+```
+
+## 데이터 & DB
+
+첫 실행 시 `data/` 폴더가 자동 생성되며, 아래 파일들이 관리됩니다:
+
+```
+data/
+├── palworld.db          # SQLite DB (플레이어 통계, 세션 기록)
+├── player_list.txt      # 접속했던 플레이어 목록 (레거시, DB와 병행)
+├── playtime.txt         # 누적 플레이타임 (레거시, DB와 병행)
+├── panel_server_log.txt # 패널에서 서버를 켰을 때의 로그
+└── presets/             # 서버 설정 프리셋 (JSON)
+```
+
+- **DB는 별도 설치 불필요** - `better-sqlite3`가 내장되어 있어 `npm install`만 하면 됩니다
+- 기존에 `playtime.txt`/`player_list.txt`가 있으면 첫 실행 시 DB로 자동 마이그레이션
+- 패널 재시작 시 DB에서 플레이어 이름과 접속 기록을 자동 복원
+- `data/` 폴더를 백업하면 모든 통계 데이터를 보존할 수 있습니다
 
 ## 환경변수
 
