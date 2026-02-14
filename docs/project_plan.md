@@ -59,6 +59,8 @@ palworld-panel/
 | GET | /api/status | 서버 실행 여부 + 로그 |
 | GET | /api/settings | 현재 INI 설정 JSON |
 | POST | /api/settings | 설정 일괄 저장 |
+| GET | /api/stats/players, sessions, daily, player/:userId | 접속 통계 (SQLite) |
+| GET | /api/db/query?sql=... | DB 조회 (SELECT만 허용, 읽기 전용) |
 | POST | /api/server/start, stop, restart | 서버 시작/정지/재시작 |
 
 ---
@@ -73,6 +75,7 @@ palworld-panel/
   - 서버 시작·정지·재시작 버튼
   - 실시간 상태 폴링(5초), 로그 영역(접기/펼치기)
   - 설정 저장 후 “재시작 필요” 배너, 토스트 알림
+  - **DB 조회**: SQL 입력란에서 SELECT 쿼리 실행 후 결과 테이블 표시 (MySQL 설치 불필요, SQLite 사용)
 
 ---
 

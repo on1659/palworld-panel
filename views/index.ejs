@@ -220,6 +220,27 @@
           <div id="stats-sessions-empty" class="hidden text-center py-8 text-gray-500 text-sm">아직 세션 기록이 없습니다</div>
         </div>
       </div>
+
+      <!-- DB 조회 (SQLite 읽기 전용) -->
+      <div class="mt-6 pt-4 border-t border-gray-700/50">
+        <h3 class="text-sm font-semibold text-white mb-2">🗄️ DB 조회</h3>
+        <p class="text-xs text-gray-500 mb-2">SELECT 쿼리만 실행됩니다. 예: SELECT * FROM players;</p>
+        <div class="flex gap-2 mb-3">
+          <textarea id="db-query-sql" rows="3" placeholder="SELECT * FROM players LIMIT 10"
+            class="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm font-mono text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-y min-h-[80px]"></textarea>
+          <button type="button" onclick="runDbQuery()" class="btn-glow self-end px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium text-sm whitespace-nowrap">
+            실행
+          </button>
+        </div>
+        <div id="db-query-error" class="hidden mb-2 text-sm text-red-400"></div>
+        <div id="db-query-result" class="bg-black/30 rounded-xl overflow-x-auto overflow-y-auto max-h-80">
+          <table class="w-full text-sm text-left">
+            <thead id="db-query-thead" class="text-gray-400 border-b border-gray-700"></thead>
+            <tbody id="db-query-tbody" class="text-gray-300"></tbody>
+          </table>
+          <div id="db-query-empty" class="hidden text-center py-8 text-gray-500 text-sm">쿼리를 입력하고 실행하세요</div>
+        </div>
+      </div>
     </div>
 
     <!-- Settings -->
@@ -772,6 +793,58 @@
       await loadStats(currentStatsTab);
       btn.textContent = '🔄 갱신';
       btn.disabled = false;
+    }
+
+    async function runDbQuery() {
+      const sqlEl = document.getElementById('db-query-sql');
+      const sql = (sqlEl.value || '').trim();
+      const errEl = document.getElementById('db-query-error');
+      const thead = document.getElementById('db-query-thead');
+      const tbody = document.getElementById('db-query-tbody');
+      const emptyEl = document.getElementById('db-query-empty');
+      errEl.classList.add('hidden');
+      emptyEl.classList.add('hidden');
+      if (!sql) {
+        errEl.textContent = 'SQL을 입력하세요.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      try {
+        const res = await fetch('/api/db/query?sql=' + encodeURIComponent(sql));
+        const data = await res.json();
+        if (!data.success) {
+          errEl.textContent = data.error || '실행 실패';
+          errEl.classList.remove('hidden');
+          thead.innerHTML = '';
+          tbody.innerHTML = '';
+          emptyEl.classList.remove('hidden');
+          return;
+        }
+        const { columns, rows } = data;
+        if (!columns || columns.length === 0) {
+          thead.innerHTML = '';
+          tbody.innerHTML = '';
+          emptyEl.classList.remove('hidden');
+          return;
+        }
+        thead.innerHTML = '<tr>' + columns.map(c => '<th class="px-4 py-2 font-medium">' + escapeHtml(c) + '</th>').join('') + '</tr>';
+        if (!rows || rows.length === 0) {
+          tbody.innerHTML = '';
+          emptyEl.classList.remove('hidden');
+          return;
+        }
+        emptyEl.classList.add('hidden');
+        tbody.innerHTML = rows.map(row => {
+          return '<tr class="border-b border-gray-700/50">' +
+            columns.map(col => '<td class="px-4 py-2">' + escapeHtml(row[col] != null ? String(row[col]) : '') + '</td>').join('') + '</tr>';
+        }).join('');
+      } catch (e) {
+        errEl.textContent = e.message || '요청 실패';
+        errEl.classList.remove('hidden');
+        thead.innerHTML = '';
+        tbody.innerHTML = '';
+        emptyEl.classList.remove('hidden');
+      }
     }
 
     // --- 프리셋 ---

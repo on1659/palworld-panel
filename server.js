@@ -1331,6 +1331,26 @@ app.get('/api/stats/player/:userId', requireAuth, (req, res) => {
   }
 });
 
+// DB 조회 (읽기 전용 SELECT만 허용)
+app.get('/api/db/query', requireAuth, (req, res) => {
+  try {
+    let sql = (req.query.sql || '').trim();
+    if (!sql) return res.status(400).json({ success: false, error: 'sql 파라미터가 필요합니다.' });
+    // 세미콜론으로 여러 문 차단, 첫 문만 사용
+    const firstStmt = sql.split(';')[0].trim();
+    const upper = firstStmt.toUpperCase();
+    if (!upper.startsWith('SELECT')) {
+      return res.status(400).json({ success: false, error: 'SELECT 쿼리만 실행할 수 있습니다.' });
+    }
+    const stmt = db.prepare(firstStmt);
+    const rows = stmt.all();
+    const columns = stmt.columns().map(c => c.name);
+    res.json({ success: true, columns, rows });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 loadPlayerList();
 loadPlaytime();
 
