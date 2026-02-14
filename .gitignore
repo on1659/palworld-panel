@@ -1,3 +1,5 @@
 node_modules/
 .env
-백섭대비
+data/
+백섭대비/
+.claude/

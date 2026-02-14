@@ -18,6 +18,7 @@
     .slider-custom { -webkit-appearance: none; appearance: none; height: 6px; border-radius: 3px; background: #374151; outline: none; }
     .slider-custom::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #6366f1; cursor: pointer; box-shadow: 0 0 10px rgba(99,102,241,0.5); }
     .slider-custom::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: #6366f1; cursor: pointer; border: none; }
+    .slider-default-marker { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 2px; height: 14px; background: rgba(156, 163, 175, 0.8); border-radius: 1px; pointer-events: none; z-index: 0; }
     .log-container { font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; }
     .toast { animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s; }
     @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -30,6 +31,34 @@
 <body class="text-gray-200">
   <!-- Toast container -->
   <div id="toasts" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+  <!-- Shutdown Confirmation Modal -->
+  <div id="shutdown-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-800 rounded-2xl max-w-md w-full border border-gray-700 shadow-2xl">
+      <div class="p-6">
+        <h3 class="text-xl font-bold text-white mb-4" id="shutdown-modal-title">서버 종료 확인</h3>
+        <div id="shutdown-modal-body" class="text-gray-300 mb-6 space-y-2"></div>
+        <div class="flex gap-3">
+          <button onclick="confirmShutdown()" class="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium">
+            예, 종료합니다
+          </button>
+          <button onclick="closeShutdownModal()" class="flex-1 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium">
+            취소
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Force Shutdown Banner (shows during countdown) -->
+  <div id="force-shutdown-banner" class="hidden fixed top-0 left-0 right-0 bg-red-600/95 text-white text-center py-3 text-sm z-40 backdrop-blur shadow-lg">
+    <div class="flex items-center justify-center gap-4">
+      <span id="shutdown-countdown-text">⏳ 서버가 60초 후 종료됩니다...</span>
+      <button onclick="forceShutdownNow()" class="px-4 py-1.5 bg-white/20 rounded-lg hover:bg-white/30 font-medium">
+        ⚡ 지금 바로 종료
+      </button>
+    </div>
+  </div>
 
   <!-- Restart banner -->
   <div id="restart-banner" class="hidden fixed top-0 left-0 right-0 bg-amber-600/90 text-white text-center py-2 text-sm z-40 backdrop-blur">
@@ -79,6 +108,90 @@
           <div id="logs" class="text-green-400 whitespace-pre-wrap">로그를 불러오는 중...</div>
         </div>
       </details>
+
+      <!-- 접속 현황 -->
+      <div class="mt-6 pt-4 border-t border-gray-700/50">
+        <h3 class="text-sm font-semibold text-white mb-2">👥 접속 현황</h3>
+        <p class="text-xs text-gray-500 mb-2">초록: 현재 접속 중 · 회색: 한 번이라도 접속한 서버 인원 (재시작/정지 시 알림 대상)</p>
+        <div id="players-list" class="flex flex-wrap gap-2"></div>
+      </div>
+
+      <!-- REST API Status -->
+      <div class="mb-3 p-3 rounded-lg bg-gray-800/50 border border-gray-700">
+        <h4 class="text-xs font-semibold text-gray-400 mb-2">🔍 REST API 상태</h4>
+        <div class="text-xs">
+          <div id="rest-api-status" class="flex items-center gap-2">
+            <span class="status-dot offline"></span>
+            <span class="text-gray-400">확인 중...</span>
+          </div>
+        </div>
+        <details class="mt-2 text-xs text-gray-500">
+          <summary class="cursor-pointer hover:text-gray-400">도움말</summary>
+          <p class="mt-1">REST API가 활성화되어야 플레이어 접속 감지가 가능합니다.</p>
+          <p>설정에서 RESTAPIEnabled=True, AdminPassword 설정 후 서버 재시작하세요.</p>
+        </details>
+      </div>
+
+      <!-- 통계 대시보드 -->
+      <div class="mt-6 pt-4 border-t border-gray-700/50">
+        <h3 class="text-sm font-semibold text-white mb-3">📊 접속 통계</h3>
+
+        <!-- 통계 탭 -->
+        <div class="flex gap-1 mb-3 items-center">
+          <button onclick="switchStatsTab('players')" data-stats-tab="players" class="stats-tab-btn px-3 py-1.5 text-xs rounded-lg bg-indigo-600 text-white">플레이어 통계</button>
+          <button onclick="switchStatsTab('daily')" data-stats-tab="daily" class="stats-tab-btn px-3 py-1.5 text-xs rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600">일별 통계</button>
+          <button onclick="switchStatsTab('sessions')" data-stats-tab="sessions" class="stats-tab-btn px-3 py-1.5 text-xs rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600">최근 세션</button>
+          <button onclick="refreshStats()" id="stats-refresh-btn" class="ml-auto px-3 py-1.5 text-xs rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600">🔄 갱신</button>
+        </div>
+
+        <!-- 플레이어 통계 -->
+        <div id="stats-players" class="stats-content bg-black/30 rounded-xl overflow-hidden">
+          <table class="w-full text-sm text-left">
+            <thead class="text-gray-400 border-b border-gray-700">
+              <tr>
+                <th class="px-4 py-2 font-medium">플레이어</th>
+                <th class="px-4 py-2 font-medium">총 플레이 시간</th>
+                <th class="px-4 py-2 font-medium">접속 횟수</th>
+                <th class="px-4 py-2 font-medium">최근 접속</th>
+              </tr>
+            </thead>
+            <tbody id="stats-players-tbody" class="text-gray-300"></tbody>
+          </table>
+          <div id="stats-players-empty" class="hidden text-center py-8 text-gray-500 text-sm">아직 접속 기록이 없습니다</div>
+        </div>
+
+        <!-- 일별 통계 -->
+        <div id="stats-daily" class="stats-content hidden bg-black/30 rounded-xl overflow-hidden">
+          <table class="w-full text-sm text-left">
+            <thead class="text-gray-400 border-b border-gray-700">
+              <tr>
+                <th class="px-4 py-2 font-medium">날짜</th>
+                <th class="px-4 py-2 font-medium">고유 접속자</th>
+                <th class="px-4 py-2 font-medium">세션 수</th>
+                <th class="px-4 py-2 font-medium">총 플레이 시간</th>
+              </tr>
+            </thead>
+            <tbody id="stats-daily-tbody" class="text-gray-300"></tbody>
+          </table>
+          <div id="stats-daily-empty" class="hidden text-center py-8 text-gray-500 text-sm">아직 일별 기록이 없습니다</div>
+        </div>
+
+        <!-- 최근 세션 -->
+        <div id="stats-sessions" class="stats-content hidden bg-black/30 rounded-xl overflow-hidden">
+          <table class="w-full text-sm text-left">
+            <thead class="text-gray-400 border-b border-gray-700">
+              <tr>
+                <th class="px-4 py-2 font-medium">플레이어</th>
+                <th class="px-4 py-2 font-medium">접속 시간</th>
+                <th class="px-4 py-2 font-medium">퇴장 시간</th>
+                <th class="px-4 py-2 font-medium">플레이 시간</th>
+              </tr>
+            </thead>
+            <tbody id="stats-sessions-tbody" class="text-gray-300"></tbody>
+          </table>
+          <div id="stats-sessions-empty" class="hidden text-center py-8 text-gray-500 text-sm">아직 세션 기록이 없습니다</div>
+        </div>
+      </div>
     </div>
 
     <!-- Settings -->
@@ -119,7 +232,7 @@
           <% categories.forEach((cat, i) => { %>
             <div class="tab-content <%= i === 0 ? '' : 'hidden' %>" data-tab="<%= cat %>">
               <div class="grid gap-4 md:grid-cols-2">
-                <% defs.filter(d => d.category === cat).forEach(def => { %>
+                <% (cat === '전체' ? defs : defs.filter(d => d.category === cat)).forEach(def => { %>
                   <% const val = settings[def.key] !== undefined ? settings[def.key] : def.default; %>
                   <div class="setting-card bg-gray-800/50 rounded-xl p-4 transition-all" data-setting-key="<%= def.key %>" data-label="<%= def.label %>">
                     <div class="flex items-start justify-between mb-1">
@@ -135,11 +248,15 @@
                     <p class="text-xs text-gray-500 mb-2"><%= def.desc %></p>
 
                     <% if (def.type === 'slider') { %>
-                      <input type="range" id="slider-<%= def.key %>" value="<%= val %>"
-                        min="<%= def.min %>" max="<%= def.max %>" step="<%= def.step %>"
-                        class="w-full slider-custom"
-                        data-edit-id="val-<%= def.key %>"
-                        oninput="syncEditFromSlider(this)">
+                      <div class="relative">
+                        <input type="range" id="slider-<%= def.key %>" value="<%= val %>"
+                          min="<%= def.min %>" max="<%= def.max %>" step="<%= def.step %>"
+                          class="w-full slider-custom"
+                          data-edit-id="val-<%= def.key %>"
+                          oninput="syncEditFromSlider(this)">
+                        <span class="slider-default-marker" style="left: <%= ((Number(def.default) - def.min) / (def.max - def.min) * 100) %>%" title="기본값: <%= def.default %>"></span>
+                      </div>
+                      <p class="text-xs text-gray-500 mt-1">기본값: <span class="text-gray-400 font-mono"><%= def.default %></span></p>
 
                     <% } else if (def.type === 'boolean') { %>
                       <label class="relative inline-flex items-center cursor-pointer">
@@ -215,8 +332,38 @@
       setTimeout(() => div.remove(), 3000);
     }
 
+    // Global variables for shutdown
+    let shutdownAction = null; // 'stop' or 'restart'
+
     // Server actions
     async function serverAction(action) {
+      // For stop/restart, show confirmation modal with player list
+      if (action === 'stop' || action === 'restart') {
+        try {
+          const res = await fetch('/api/players');
+          const data = await res.json();
+          const onlinePlayers = data.online || [];
+          const playerNames = data.playerNames || {};
+
+          if (onlinePlayers.length === 0) {
+            // No players, confirm and proceed directly
+            if (!confirm(`현재 접속 중인 플레이어가 없습니다.\n${action === 'stop' ? '서버를 정지' : '서버를 재시작'}하시겠습니까?`)) return;
+            await executeServerAction(action);
+          } else {
+            // Players online, show custom modal
+            shutdownAction = action;
+            showShutdownModal(onlinePlayers, playerNames, action);
+          }
+        } catch (e) {
+          showToast('접속자 정보를 가져올 수 없습니다: ' + e.message, 'error');
+        }
+      } else {
+        // For 'start', execute directly
+        await executeServerAction(action);
+      }
+    }
+
+    async function executeServerAction(action) {
       try {
         const res = await fetch(`/api/server/${action}`, { method: 'POST' });
         const data = await res.json();
@@ -225,6 +372,86 @@
         setTimeout(refreshStatus, 2000);
       } catch (e) {
         showToast('요청 실패: ' + e.message, 'error');
+      }
+    }
+
+    function showShutdownModal(onlinePlayers, playerNames, action) {
+      const modal = document.getElementById('shutdown-modal');
+      const title = document.getElementById('shutdown-modal-title');
+      const body = document.getElementById('shutdown-modal-body');
+
+      title.textContent = action === 'stop' ? '서버 종료 확인' : '서버 재시작 확인';
+
+      // Build player list
+      const playerListHtml = onlinePlayers.map(userId => {
+        const displayName = playerNames[userId] || userId;
+        return `<span class="inline-block px-2 py-1 bg-green-600/20 border border-green-600/50 rounded text-green-300 text-sm">${escapeHtml(displayName)}</span>`;
+      }).join(' ');
+
+      body.innerHTML = `
+        <p class="font-semibold">현재 <span class="text-green-400">${onlinePlayers.length}명</span>의 사용자가 접속 중입니다:</p>
+        <div class="flex flex-wrap gap-2 my-3">${playerListHtml}</div>
+        <p class="text-sm text-gray-400">정말로 ${action === 'stop' ? '서버를 종료' : '서버를 재시작'}하시겠습니까?</p>
+        <p class="text-xs text-amber-400 mt-2">⚠️ 60초 후에 서버가 종료되며, 플레이어들에게 공지가 전송됩니다.</p>
+      `;
+
+      modal.classList.remove('hidden');
+    }
+
+    function closeShutdownModal() {
+      document.getElementById('shutdown-modal').classList.add('hidden');
+      shutdownAction = null;
+    }
+
+    async function confirmShutdown() {
+      closeShutdownModal();
+      if (!shutdownAction) return;
+
+      try {
+        // Call stop-with-notice API
+        const res = await fetch('/api/server/stop-with-notice', { method: 'POST' });
+        const data = await res.json();
+
+        if (data.success) {
+          showToast(data.message, 'success');
+          // Show force shutdown banner
+          document.getElementById('force-shutdown-banner').classList.remove('hidden');
+
+          // If restart, schedule restart after shutdown
+          if (shutdownAction === 'restart') {
+            setTimeout(async () => {
+              await executeServerAction('start');
+              document.getElementById('force-shutdown-banner').classList.add('hidden');
+            }, 70000); // 60s + 10s = 70s total
+          } else {
+            // Hide banner after shutdown completes
+            setTimeout(() => {
+              document.getElementById('force-shutdown-banner').classList.add('hidden');
+            }, 70000);
+          }
+
+          setTimeout(refreshStatus, 2000);
+        } else {
+          showToast(data.message, 'error');
+        }
+      } catch (e) {
+        showToast('종료 요청 실패: ' + e.message, 'error');
+      }
+
+      shutdownAction = null;
+    }
+
+    async function forceShutdownNow() {
+      if (!confirm('정말로 지금 바로 강제 종료하시겠습니까?\n플레이어들이 저장할 시간이 없습니다.')) return;
+
+      try {
+        const res = await fetch('/api/server/force-stop', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message, data.success ? 'success' : 'error');
+        document.getElementById('force-shutdown-banner').classList.add('hidden');
+        setTimeout(refreshStatus, 2000);
+      } catch (e) {
+        showToast('강제 종료 실패: ' + e.message, 'error');
       }
     }
 
@@ -337,11 +564,168 @@
         document.getElementById('logs').textContent = data.logs.length ? data.logs.join('\n') : '로그가 없습니다.';
         const lc = document.getElementById('log-container');
         lc.scrollTop = lc.scrollHeight;
+        if (data.players) {
+          const onlineSet = new Set((data.players.online || []));
+          const members = data.players.members || [];
+          const playerNames = data.players.playerNames || {};
+          const listEl = document.getElementById('players-list');
+          listEl.innerHTML = members.length === 0
+            ? '<span class="text-gray-500 text-sm">접속 기록이 없습니다.</span>'
+            : members.map(id => {
+                const isOn = onlineSet.has(id);
+                const displayName = playerNames[id] || id;
+                return '<span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm ' + (isOn ? 'bg-green-500/20 text-green-300' : 'bg-gray-600/50 text-gray-400') + '">' +
+                  '<span class="w-2 h-2 rounded-full ' + (isOn ? 'bg-green-500' : 'bg-gray-500') + '"></span>' + escapeHtml(displayName) + '</span>';
+              }).join('');
+
+          // Update REST API status
+          if (data.players.detectionMethod) {
+            const method = data.players.detectionMethod;
+            const restStatus = document.getElementById('rest-api-status');
+            const restDot = restStatus.querySelector('.status-dot');
+            const restLabel = restStatus.querySelector('span:nth-child(2)');
+
+            if (method.enabled && method.available) {
+              restDot.className = 'status-dot online';
+              restLabel.textContent = 'REST API: 활성 ✓';
+              restLabel.className = 'text-green-400';
+            } else if (method.enabled && !method.available) {
+              restDot.className = 'status-dot offline';
+              restLabel.textContent = 'REST API: 오류 - ' + (method.error || '연결 실패');
+              restLabel.className = 'text-red-400';
+            } else {
+              restDot.className = 'status-dot offline';
+              restLabel.textContent = 'REST API: 비활성';
+              restLabel.className = 'text-gray-500';
+            }
+          }
+        }
       } catch {}
     }
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    // --- 통계 대시보드 ---
+    function switchStatsTab(tab) {
+      document.querySelectorAll('.stats-tab-btn').forEach(b => {
+        if (b.dataset.statsTab === tab) {
+          b.className = 'stats-tab-btn px-3 py-1.5 text-xs rounded-lg bg-indigo-600 text-white';
+        } else {
+          b.className = 'stats-tab-btn px-3 py-1.5 text-xs rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600';
+        }
+      });
+      document.querySelectorAll('.stats-content').forEach(c => c.classList.add('hidden'));
+      document.getElementById('stats-' + tab).classList.remove('hidden');
+      loadStats(tab);
+    }
+
+    function formatDuration(mins) {
+      if (!mins || mins <= 0) return '-';
+      const h = Math.floor(mins / 60);
+      const m = Math.round(mins % 60);
+      return h > 0 ? (h + '시간 ' + m + '분') : (m + '분');
+    }
+
+    function formatTime(ts) {
+      if (!ts) return '-';
+      const d = new Date(ts);
+      return d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) + ' ' +
+             d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    async function loadStats(tab) {
+      try {
+        if (tab === 'players') {
+          const res = await fetch('/api/stats/players');
+          const data = await res.json();
+          const tbody = document.getElementById('stats-players-tbody');
+          const empty = document.getElementById('stats-players-empty');
+          if (!data.players || data.players.length === 0) {
+            tbody.innerHTML = '';
+            empty.classList.remove('hidden');
+            return;
+          }
+          empty.classList.add('hidden');
+          tbody.innerHTML = data.players.map(p => {
+            const name = escapeHtml(p.displayName || p.userId);
+            const time = formatDuration(p.totalPlaytimeMinutes);
+            const online = p.isOnline ? '<span class="ml-1 text-green-400 text-xs">● 접속 중</span>' : '';
+            const lastSeen = p.isOnline ? '<span class="text-green-400">접속 중</span>' : formatTime(p.lastSeen);
+            return '<tr class="border-b border-gray-700/50">' +
+              '<td class="px-4 py-2">' + name + online + '</td>' +
+              '<td class="px-4 py-2 font-mono">' + time + '</td>' +
+              '<td class="px-4 py-2 text-center">' + p.totalSessions + '회</td>' +
+              '<td class="px-4 py-2 text-gray-400">' + lastSeen + '</td></tr>';
+          }).join('');
+        } else if (tab === 'daily') {
+          const res = await fetch('/api/stats/daily?days=30');
+          const data = await res.json();
+          const tbody = document.getElementById('stats-daily-tbody');
+          const empty = document.getElementById('stats-daily-empty');
+          if (!data.daily || data.daily.length === 0) {
+            tbody.innerHTML = '';
+            empty.classList.remove('hidden');
+            return;
+          }
+          empty.classList.add('hidden');
+          tbody.innerHTML = data.daily.map(d => {
+            return '<tr class="border-b border-gray-700/50">' +
+              '<td class="px-4 py-2">' + escapeHtml(d.day) + '</td>' +
+              '<td class="px-4 py-2 text-center">' + d.uniquePlayers + '명</td>' +
+              '<td class="px-4 py-2 text-center">' + d.totalSessions + '회</td>' +
+              '<td class="px-4 py-2 font-mono">' + formatDuration(d.totalMinutes) + '</td></tr>';
+          }).join('');
+        } else if (tab === 'sessions') {
+          const res = await fetch('/api/stats/sessions?limit=50');
+          const data = await res.json();
+          const tbody = document.getElementById('stats-sessions-tbody');
+          const empty = document.getElementById('stats-sessions-empty');
+          if (!data.sessions || data.sessions.length === 0) {
+            tbody.innerHTML = '';
+            empty.classList.remove('hidden');
+            return;
+          }
+          empty.classList.add('hidden');
+          tbody.innerHTML = data.sessions.map(s => {
+            const name = escapeHtml(s.displayName || s.playerName || s.userId);
+            const joinStr = formatTime(s.joinTime);
+            const leaveStr = s.leaveTime ? formatTime(s.leaveTime) : '<span class="text-green-400">접속 중</span>';
+            const dur = s.durationMinutes ? formatDuration(s.durationMinutes) : '<span class="text-green-400">진행 중</span>';
+            return '<tr class="border-b border-gray-700/50">' +
+              '<td class="px-4 py-2">' + name + '</td>' +
+              '<td class="px-4 py-2 text-gray-400">' + joinStr + '</td>' +
+              '<td class="px-4 py-2 text-gray-400">' + leaveStr + '</td>' +
+              '<td class="px-4 py-2 font-mono">' + dur + '</td></tr>';
+          }).join('');
+        }
+      } catch (e) {
+        console.error('Stats load error:', e);
+      }
+    }
+
+    // 초기 통계 로드
+    loadStats('players');
 
     refreshStatus();
     setInterval(refreshStatus, 5000);
+
+    // 통계 갱신
+    let currentStatsTab = 'players';
+    const _origSwitchTab = switchStatsTab;
+    switchStatsTab = function(tab) { currentStatsTab = tab; _origSwitchTab(tab); };
+    setInterval(() => loadStats(currentStatsTab), 5 * 60 * 1000);
+
+    async function refreshStats() {
+      const btn = document.getElementById('stats-refresh-btn');
+      btn.textContent = '⏳ 갱신 중...';
+      btn.disabled = true;
+      await loadStats(currentStatsTab);
+      btn.textContent = '🔄 갱신';
+      btn.disabled = false;
+    }
   </script>
 </body>
 </html>
