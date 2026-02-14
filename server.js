@@ -266,6 +266,69 @@ function getServerName() {
   } catch { return 'Palworld Server'; }
 }
 
+// --- 패널 시작 시 PalWorldSettings.ini 자동 설정 ---
+(function autoConfigureSettings() {
+  if (!REST_API_ENABLED) return;
+  try {
+    const settings = readSettings();
+    if (!settings) {
+      console.log('⚙️ 설정 파일이 없어 자동 설정을 건너뜁니다.');
+      return;
+    }
+
+    let changed = false;
+    const changes = [];
+
+    // REST API 활성화
+    if (settings.RESTAPIEnabled !== 'True') {
+      settings.RESTAPIEnabled = 'True';
+      changes.push('RESTAPIEnabled=True');
+      changed = true;
+    }
+
+    // REST API 포트
+    if (!settings.RESTAPIPort || settings.RESTAPIPort === '0') {
+      settings.RESTAPIPort = REST_API_PORT;
+      changes.push(`RESTAPIPort=${REST_API_PORT}`);
+      changed = true;
+    }
+
+    // AdminPassword (.env의 REST_API_PASSWORD 기준으로 설정)
+    if (REST_API_PASSWORD && (!settings.AdminPassword || settings.AdminPassword === '')) {
+      settings.AdminPassword = REST_API_PASSWORD;
+      changes.push('AdminPassword=(설정됨)');
+      changed = true;
+    }
+
+    // 로그 관련 (접속 감지에 필요)
+    if (settings.LogFormatType !== 'Text') {
+      settings.LogFormatType = 'Text';
+      changes.push('LogFormatType=Text');
+      changed = true;
+    }
+    if (settings.bIsShowJoinLeftMessage !== 'True') {
+      settings.bIsShowJoinLeftMessage = 'True';
+      changes.push('bIsShowJoinLeftMessage=True');
+      changed = true;
+    }
+    if (settings.bEnablePlayerLogging !== 'True') {
+      settings.bEnablePlayerLogging = 'True';
+      changes.push('bEnablePlayerLogging=True');
+      changed = true;
+    }
+
+    if (changed) {
+      writeSettings(settings);
+      console.log(`⚙️ PalWorldSettings.ini 자동 설정 완료: ${changes.join(', ')}`);
+      console.log('   ※ 서버가 실행 중이면 재시작해야 적용됩니다.');
+    } else {
+      console.log('✅ PalWorldSettings.ini 설정이 이미 올바릅니다.');
+    }
+  } catch (e) {
+    console.error('자동 설정 실패:', e.message);
+  }
+})();
+
 // --- REST API Client (플레이어 접속 감지용) ---
 class RestApiClient {
   constructor() {

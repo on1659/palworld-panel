@@ -87,24 +87,7 @@ PAL_BACKUP_ROOT=D:\PalworldBackups
 > `YOUR_WORLD_ID`는 `SaveGames\0\` 폴더 안에 있는 16자리 영숫자 폴더명입니다.
 > 예: `SaveGames\0\2F8A3B4C1D5E6F70`
 
-### 4. 팰월드 서버 REST API 활성화 (권장)
-
-PalWorldSettings.ini에서 아래 항목을 설정하세요 (또는 패널 설치 후 웹 UI에서 변경 가능):
-
-```ini
-RESTAPIEnabled=True
-RESTAPIPort=8212
-AdminPassword="내관리자비밀번호"
-```
-
-REST API를 활성화하면 다음 기능을 사용할 수 있습니다:
-- 실시간 접속자 감지 (5초 간격)
-- 인게임 공지 전송
-- 종료 전 플레이어 경고
-- 백업 전 월드 저장
-- 접속 시간 알림
-
-### 5. 실행
+### 4. 실행
 
 ```bash
 npm start
@@ -113,7 +96,12 @@ npm start
 브라우저에서 `http://localhost:3000` 으로 접속하세요.
 `.env`에 설정한 `PANEL_PASSWORD`로 로그인합니다.
 
-### 6. (선택) 자동 시작 설정
+> **자동 설정:** 패널이 시작되면 PalWorldSettings.ini를 자동으로 확인하고,
+> REST API 활성화(`RESTAPIEnabled=True`), 로그 설정(`LogFormatType=Text`) 등
+> 패널에 필요한 설정을 자동으로 적용합니다. 수동으로 ini 파일을 편집할 필요가 없습니다.
+> 서버가 이미 실행 중이면 재시작 후 적용됩니다.
+
+### 5. (선택) 자동 시작 설정
 
 패널을 Windows 시작 시 자동으로 실행하려면:
 
