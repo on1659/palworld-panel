@@ -1493,4 +1493,91 @@ app.listen(PORT, () => {
       if (!currentOnline.has(userId)) delete notifiedHours[userId];
     }
   }, 60 * 1000); // 1분마다 체크
+
+  // --- 매일 오전 6시 자동 재시작 ---
+  let autoRestartRetryTimer = null;
+
+  async function autoRestartServer() {
+    if (!isServerRunning()) {
+      addLog('[자동재시작] 서버가 꺼져있어 재시작 스킵');
+      return;
+    }
+    if (currentOnline.size > 0) {
+      const names = [...currentOnline].map(id => playerNames[id] || id).join(', ');
+      addLog(`[자동재시작] 접속자 ${currentOnline.size}명 (${names}) → 1시간 후 재시도`);
+      // 1시간 후 재시도
+      if (autoRestartRetryTimer) clearInterval(autoRestartRetryTimer);
+      autoRestartRetryTimer = setInterval(async () => {
+        if (!isServerRunning()) {
+          addLog('[자동재시작] 서버가 꺼져있어 재시도 취소');
+          clearInterval(autoRestartRetryTimer);
+          autoRestartRetryTimer = null;
+          return;
+        }
+        if (currentOnline.size === 0) {
+          clearInterval(autoRestartRetryTimer);
+          autoRestartRetryTimer = null;
+          await performAutoRestart();
+        } else {
+          const names = [...currentOnline].map(id => playerNames[id] || id).join(', ');
+          addLog(`[자동재시작] 아직 접속자 ${currentOnline.size}명 (${names}) → 1시간 후 재시도`);
+        }
+      }, 60 * 60 * 1000); // 1시간마다 재시도
+      return;
+    }
+    await performAutoRestart();
+  }
+
+  async function performAutoRestart() {
+    addLog('[자동재시작] 접속자 없음 → 서버 재시작 시작');
+    try {
+      // 백업 먼저
+      if (REST_API_ENABLED && restApiClient.isAvailable) {
+        try {
+          await restApiClient.save();
+          addLog('[자동재시작] 서버 저장 완료');
+        } catch (_) {}
+      }
+      // 종료
+      const stopResult = await stopServer();
+      addLog(`[자동재시작] 서버 종료: ${stopResult.message}`);
+      // 종료 대기 후 시작 (35초 대기 - shutdown 30초 + 여유 5초)
+      setTimeout(() => {
+        if (!isServerRunning()) {
+          const startResult = startServer();
+          addLog(`[자동재시작] 서버 시작: ${startResult.message}`);
+        } else {
+          addLog('[자동재시작] 서버가 아직 실행 중, 10초 후 재시도');
+          setTimeout(() => {
+            if (!isServerRunning()) {
+              const startResult = startServer();
+              addLog(`[자동재시작] 서버 시작: ${startResult.message}`);
+            } else {
+              addLog('[자동재시작] 서버 종료 실패, 수동 확인 필요');
+            }
+          }, 10000);
+        }
+      }, 35000);
+    } catch (e) {
+      addLog(`[자동재시작] 실패: ${e.message}`);
+    }
+  }
+
+  // 다음 오전 6시까지 대기 시간 계산
+  function msUntilNext6AM() {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(6, 0, 0, 0);
+    if (now >= next) next.setDate(next.getDate() + 1);
+    return next.getTime() - now.getTime();
+  }
+
+  // 첫 오전 6시에 실행 후, 24시간마다 반복
+  setTimeout(() => {
+    autoRestartServer();
+    setInterval(autoRestartServer, 24 * 60 * 60 * 1000);
+  }, msUntilNext6AM());
+
+  const nextRestart = new Date(Date.now() + msUntilNext6AM());
+  console.log(`🔄 자동 재시작 예약: 매일 오전 6시 (다음: ${nextRestart.toLocaleString('ko-KR')})`);
 });
