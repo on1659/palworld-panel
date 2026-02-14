@@ -25,6 +25,7 @@ const PLAYER_LIST_FILE = path.join(PLAYER_DATA_DIR, 'player_list.txt');
 const PLAYTIME_FILE = path.join(PLAYER_DATA_DIR, 'playtime.txt');
 const PANEL_SERVER_LOG_FILE = path.join(PLAYER_DATA_DIR, 'panel_server_log.txt');
 const DB_PATH = path.join(PLAYER_DATA_DIR, 'palworld.db');
+const PRESETS_DIR = path.join(PLAYER_DATA_DIR, 'presets');
 
 // --- SQLite DB 초기화 ---
 if (!fs.existsSync(PLAYER_DATA_DIR)) fs.mkdirSync(PLAYER_DATA_DIR, { recursive: true });
@@ -160,55 +161,55 @@ const SETTING_DEFS = [
   { key: 'bEnablePlayerLogging', label: '플레이어 로깅', desc: '플레이어 관련 로그 출력 여부. 로그가 안 남을 때 True로 설정 후 재시작', category: '기본설정', type: 'boolean', default: true },
 
   // 전투
-  { key: 'PalDamageRateAttack', label: '팰 공격력 배율', desc: '기본값 1.0', category: '전투', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'PalDamageRateDefense', label: '팰 방어력 배율', desc: '기본값 1.0', category: '전투', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'PlayerDamageRateAttack', label: '플레이어 공격력 배율', desc: '기본값 1.0', category: '전투', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'PlayerDamageRateDefense', label: '플레이어 방어력 배율', desc: '기본값 1.0', category: '전투', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'bEnablePlayerToPlayerDamage', label: 'PvP 활성화', desc: '플레이어 간 데미지 허용', category: '전투', type: 'boolean', default: false },
-  { key: 'bEnableFriendlyFire', label: '아군 피해 활성화', desc: '같은 길드원 간 데미지', category: '전투', type: 'boolean', default: false },
-  { key: 'bActiveUNKO', label: 'UNKO 활성화', desc: '', category: '전투', type: 'boolean', default: false },
-  { key: 'bEnableAimAssistPad', label: '패드 조준 보조', desc: '컨트롤러 에임 어시스트', category: '전투', type: 'boolean', default: true },
-  { key: 'bEnableAimAssistKeyboard', label: '키보드 조준 보조', desc: '키보드/마우스 에임 어시스트', category: '전투', type: 'boolean', default: false },
-  { key: 'DeathPenalty', label: '사망 페널티', desc: 'None/Item/ItemAndEquipment/All', category: '전투', type: 'select', default: 'All', options: ['None', 'Item', 'ItemAndEquipment', 'All'] },
+  { key: 'PalDamageRateAttack', label: '팰 공격력 배율', desc: '팰이 주는 데미지 배율. 높을수록 팰이 강해짐 (기본 1.0)', category: '전투', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'PalDamageRateDefense', label: '팰 방어력 배율', desc: '팰이 받는 데미지 배율. 높을수록 팰이 더 많이 맞음 (기본 1.0)', category: '전투', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'PlayerDamageRateAttack', label: '플레이어 공격력 배율', desc: '플레이어가 주는 데미지 배율. 높을수록 강해짐 (기본 1.0)', category: '전투', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'PlayerDamageRateDefense', label: '플레이어 방어력 배율', desc: '플레이어가 받는 데미지 배율. 높을수록 더 아픔 (기본 1.0)', category: '전투', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'bEnablePlayerToPlayerDamage', label: 'PvP 활성화', desc: '켜면 플레이어끼리 공격 가능. 끄면 아무리 때려도 데미지 0', category: '전투', type: 'boolean', default: false },
+  { key: 'bEnableFriendlyFire', label: '아군 피해 활성화', desc: '켜면 같은 길드원도 공격 가능. PvP와 별개 설정', category: '전투', type: 'boolean', default: false },
+  { key: 'bActiveUNKO', label: 'UNKO 활성화', desc: '특수 이벤트 오브젝트 생성 여부', category: '전투', type: 'boolean', default: false },
+  { key: 'bEnableAimAssistPad', label: '패드 조준 보조', desc: '컨트롤러 사용 시 에임 자동 보정', category: '전투', type: 'boolean', default: true },
+  { key: 'bEnableAimAssistKeyboard', label: '키보드 조준 보조', desc: '키보드/마우스 사용 시 에임 자동 보정', category: '전투', type: 'boolean', default: false },
+  { key: 'DeathPenalty', label: '사망 페널티', desc: 'None: 드랍 없음 / Item: 소지품만 드랍 / ItemAndEquipment: 소지품+장비 드랍 / All: 전부 드랍 (장비+팰 포함)', category: '전투', type: 'select', default: 'All', options: ['None', 'Item', 'ItemAndEquipment', 'All'] },
 
   // 캡처
-  { key: 'PalCaptureRate', label: '팰 포획률 배율', desc: '기본값 1.0 (높을수록 쉬움)', category: '캡처', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'PalSpawnNumRate', label: '팰 스폰 배율', desc: '기본값 1.0', category: '캡처', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'bEnableNonLoginPenalty', label: '미접속 페널티', desc: '장기 미접속 시 팰 배고픔', category: '캡처', type: 'boolean', default: true },
+  { key: 'PalCaptureRate', label: '팰 포획률 배율', desc: '스피어 포획 성공률 배율. 2.0이면 2배 쉬움 (기본 1.0)', category: '캡처', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'PalSpawnNumRate', label: '팰 스폰 배율', desc: '필드에 등장하는 팰 수. 높을수록 팰이 많이 스폰 (기본 1.0)', category: '캡처', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'bEnableNonLoginPenalty', label: '미접속 페널티', desc: '켜면 오래 미접속 시 거점 팰이 배고파져서 SAN 수치 하락', category: '캡처', type: 'boolean', default: true },
 
   // 경험치/드랍
-  { key: 'ExpRate', label: '경험치 배율', desc: '기본값 1.0', category: '경험치/드랍', type: 'slider', default: 1.0, min: 0.1, max: 20.0, step: 0.1 },
-  { key: 'PalEggDefaultHatchingTime', label: '알 부화 시간(h)', desc: '기본값 72시간', category: '경험치/드랍', type: 'number', default: 72, min: 0, max: 240 },
-  { key: 'CollectionDropRate', label: '채집 드랍률 배율', desc: '기본값 1.0', category: '경험치/드랍', type: 'slider', default: 1.0, min: 0.1, max: 10.0, step: 0.1 },
-  { key: 'CollectionObjectHpRate', label: '채집 오브젝트 HP 배율', desc: '기본값 1.0 (낮을수록 빨리 부서짐)', category: '경험치/드랍', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'CollectionObjectRespawnSpeedRate', label: '채집 리스폰 속도 배율', desc: '기본값 1.0', category: '경험치/드랍', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'EnemyDropItemRate', label: '적 드랍 아이템 배율', desc: '기본값 1.0', category: '경험치/드랍', type: 'slider', default: 1.0, min: 0.1, max: 10.0, step: 0.1 },
+  { key: 'ExpRate', label: '경험치 배율', desc: '획득 경험치 배율. 2.0이면 레벨업 2배 빠름 (기본 1.0)', category: '경험치/드랍', type: 'slider', default: 1.0, min: 0.1, max: 20.0, step: 0.1 },
+  { key: 'PalEggDefaultHatchingTime', label: '알 부화 시간(h)', desc: '팰 알이 부화하는데 걸리는 시간. 0이면 즉시 부화 (기본 72시간)', category: '경험치/드랍', type: 'number', default: 72, min: 0, max: 240 },
+  { key: 'CollectionDropRate', label: '채집 드랍률 배율', desc: '나무·돌 등 채집 시 드랍 수량 배율 (기본 1.0)', category: '경험치/드랍', type: 'slider', default: 1.0, min: 0.1, max: 10.0, step: 0.1 },
+  { key: 'CollectionObjectHpRate', label: '채집 오브젝트 HP 배율', desc: '나무·바위 등의 체력. 낮을수록 적게 때려서 부서짐 (기본 1.0)', category: '경험치/드랍', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'CollectionObjectRespawnSpeedRate', label: '채집 리스폰 속도 배율', desc: '부서진 나무·바위가 다시 생성되는 속도. 높을수록 빨리 리젠 (기본 1.0)', category: '경험치/드랍', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'EnemyDropItemRate', label: '적 드랍 아이템 배율', desc: '적 팰 처치 시 드랍 아이템 수량 배율 (기본 1.0)', category: '경험치/드랍', type: 'slider', default: 1.0, min: 0.1, max: 10.0, step: 0.1 },
 
   // 생존
-  { key: 'PlayerStomachDecreaceRate', label: '플레이어 배고픔 감소율', desc: '기본값 1.0 (높을수록 빨리 배고파짐)', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'PalStomachDecreaceRate', label: '팰 배고픔 감소율', desc: '기본값 1.0', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'PlayerStaminaDecreaceRate', label: '플레이어 스태미나 감소율', desc: '기본값 1.0', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'PlayerAutoHPRegeneRate', label: '플레이어 HP 자동회복', desc: '기본값 1.0', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'PlayerAutoHpRegeneRateInSleep', label: '수면 시 HP 회복률', desc: '기본값 1.0', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'PalAutoHPRegeneRate', label: '팰 HP 자동회복', desc: '기본값 1.0', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'PalAutoHpRegeneRateInSleep', label: '팰 수면 시 HP 회복률', desc: '기본값 1.0 (거점)', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'PlayerStomachDecreaceRate', label: '플레이어 배고픔 감소율', desc: '높을수록 빨리 배고파짐. 0.5면 절반 속도로 감소 (기본 1.0)', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'PalStomachDecreaceRate', label: '팰 배고픔 감소율', desc: '거점 팰의 배고픔 감소 속도. 높을수록 빨리 배고파짐 (기본 1.0)', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'PlayerStaminaDecreaceRate', label: '플레이어 스태미나 감소율', desc: '달리기·등반 시 스태미나 소모 속도. 높을수록 빨리 소진 (기본 1.0)', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'PlayerAutoHPRegeneRate', label: '플레이어 HP 자동회복', desc: '비전투 시 HP 자연 회복 속도. 높을수록 빨리 회복 (기본 1.0)', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'PlayerAutoHpRegeneRateInSleep', label: '수면 시 HP 회복률', desc: '침대에서 잘 때 HP 회복 속도 (기본 1.0)', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'PalAutoHPRegeneRate', label: '팰 HP 자동회복', desc: '팰의 HP 자연 회복 속도 (기본 1.0)', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'PalAutoHpRegeneRateInSleep', label: '팰 수면 시 HP 회복률', desc: '거점에서 팰이 쉴 때 HP 회복 속도 (기본 1.0)', category: '생존', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
 
   // 길드
-  { key: 'GuildPlayerMaxNum', label: '길드 최대 인원', desc: '기본값 20', category: '길드', type: 'number', default: 20, min: 1, max: 100 },
-  { key: 'BaseCampMaxNum', label: '거점 최대 수', desc: '기본값 128', category: '길드', type: 'number', default: 128, min: 1, max: 500 },
-  { key: 'BaseCampWorkerMaxNum', label: '거점 배치 팰 수', desc: '기본값 15', category: '길드', type: 'number', default: 15, min: 1, max: 50 },
+  { key: 'GuildPlayerMaxNum', label: '길드 최대 인원', desc: '하나의 길드에 가입 가능한 최대 인원 (기본 20)', category: '길드', type: 'number', default: 20, min: 1, max: 100 },
+  { key: 'BaseCampMaxNum', label: '거점 최대 수', desc: '서버 전체에 설치 가능한 거점(팰박스) 총 수 (기본 128)', category: '길드', type: 'number', default: 128, min: 1, max: 500 },
+  { key: 'BaseCampWorkerMaxNum', label: '거점 배치 팰 수', desc: '하나의 거점에 배치 가능한 작업 팰 수 (기본 15)', category: '길드', type: 'number', default: 15, min: 1, max: 50 },
 
   // 기타
-  { key: 'DayTimeSpeedRate', label: '낮 시간 속도', desc: '기본값 1.0', category: '기타', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'NightTimeSpeedRate', label: '밤 시간 속도', desc: '기본값 1.0', category: '기타', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'BuildObjectDamageRate', label: '건축물 피해 배율', desc: '기본값 1.0', category: '기타', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
-  { key: 'BuildObjectDeteriorationDamageRate', label: '건축물 노후화 배율', desc: '기본값 1.0 (0으로 비활성화)', category: '기타', type: 'slider', default: 1.0, min: 0, max: 5.0, step: 0.1 },
-  { key: 'bIsMultiplay', label: '멀티플레이', desc: '멀티플레이 활성화', category: '기타', type: 'boolean', default: false },
-  { key: 'bIsPvP', label: 'PvP 모드', desc: 'PvP 서버 여부', category: '기타', type: 'boolean', default: false },
-  { key: 'CoopPlayerMaxNum', label: '협동 최대 인원', desc: '기본값 4', category: '기타', type: 'number', default: 4, min: 1, max: 32 },
-  { key: 'DropItemMaxNum', label: '바닥 아이템 최대 수', desc: '기본값 3000', category: '기타', type: 'number', default: 3000, min: 100, max: 10000 },
-  { key: 'bAutoResetGuildNoOnlinePlayers', label: '비활성 길드 자동 리셋', desc: '온라인 멤버 없는 길드 리셋', category: '기타', type: 'boolean', default: false },
-  { key: 'AutoResetGuildTimeNoOnlinePlayers', label: '길드 리셋 시간(h)', desc: '기본값 72시간', category: '기타', type: 'number', default: 72, min: 1, max: 720 },
+  { key: 'DayTimeSpeedRate', label: '낮 시간 속도', desc: '낮이 지나가는 속도. 2.0이면 낮이 2배 빨리 끝남 (기본 1.0)', category: '기타', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'NightTimeSpeedRate', label: '밤 시간 속도', desc: '밤이 지나가는 속도. 2.0이면 밤이 2배 빨리 끝남 (기본 1.0)', category: '기타', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'BuildObjectDamageRate', label: '건축물 피해 배율', desc: '건축물이 받는 데미지 배율. 높을수록 쉽게 부서짐 (기본 1.0)', category: '기타', type: 'slider', default: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+  { key: 'BuildObjectDeteriorationDamageRate', label: '건축물 노후화 배율', desc: '시간 경과에 따른 건축물 자연 열화. 0이면 노후화 없음 (기본 1.0)', category: '기타', type: 'slider', default: 1.0, min: 0, max: 5.0, step: 0.1 },
+  { key: 'bIsMultiplay', label: '멀티플레이', desc: '로컬 협동 모드 설정. 전용 서버에서는 무시됨 (항상 멀티)', category: '기타', type: 'boolean', default: false },
+  { key: 'bIsPvP', label: 'PvP 모드', desc: '켜면 PvP 서버로 표시. PvP 데미지는 별도 설정(전투 탭)', category: '기타', type: 'boolean', default: false },
+  { key: 'CoopPlayerMaxNum', label: '협동 최대 인원', desc: '같은 길드에서 동시 협동 플레이 가능한 인원 (기본 4)', category: '기타', type: 'number', default: 4, min: 1, max: 32 },
+  { key: 'DropItemMaxNum', label: '바닥 아이템 최대 수', desc: '월드에 동시에 존재할 수 있는 드랍 아이템 수. 너무 높으면 렉 (기본 3000)', category: '기타', type: 'number', default: 3000, min: 100, max: 10000 },
+  { key: 'bAutoResetGuildNoOnlinePlayers', label: '비활성 길드 자동 리셋', desc: '켜면 온라인 멤버가 없는 길드를 일정 시간 후 자동 해산', category: '기타', type: 'boolean', default: false },
+  { key: 'AutoResetGuildTimeNoOnlinePlayers', label: '길드 리셋 시간(h)', desc: '비활성 길드 자동 해산까지 걸리는 시간 (기본 72시간)', category: '기타', type: 'number', default: 72, min: 1, max: 720 },
 ];
 
 // --- INI Parser ---
@@ -827,7 +828,7 @@ async function runBackup() {
     return { success: false, message: '.env에 PAL_SAVE_PATH, PAL_BACKUP_ROOT를 설정하세요.' };
   }
   if (!fs.existsSync(PAL_SAVE_PATH)) {
-    return { success: false, message: '세이브 경로가 없습니다: ' + PAL_SAVE_PATH };
+    return { success: false, message: '세이브 경로가 없습니다. .env의 PAL_SAVE_PATH를 확인하세요.' };
   }
   // REST API로 먼저 서버 저장 (최신 데이터 디스크 flush)
   if (isServerRunning() && REST_API_ENABLED && restApiClient.isAvailable) {
@@ -846,7 +847,8 @@ async function runBackup() {
     const dest = path.join(PAL_BACKUP_ROOT, `PalServerSave_${ts}`);
     if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true });
     fs.mkdirSync(dest, { recursive: true });
-    addLog('백업 시작: ' + dest);
+    const backupName = path.basename(dest);
+    addLog('백업 시작: ' + backupName);
     const r = spawnSync('robocopy', [
       PAL_SAVE_PATH, dest,
       '/E', '/Z', '/COPY:DAT', '/R:2', '/W:2', '/XJ', '/NFL', '/NDL', '/NP'
@@ -856,9 +858,9 @@ async function runBackup() {
       addLog('백업 실패 (robocopy 코드: ' + robocopyExit + ')');
       return { success: false, message: '백업 실패. robocopy 코드: ' + robocopyExit };
     }
-    addLog('백업 완료: ' + dest);
+    addLog('백업 완료: ' + backupName);
     deleteOldBackups();
-    return { success: true, message: '백업 완료: ' + dest, path: dest };
+    return { success: true, message: '백업 완료: ' + backupName, path: dest };
   } catch (e) {
     addLog('백업 실패: ' + e.message);
     return { success: false, message: '백업 실패: ' + e.message };
@@ -1125,6 +1127,70 @@ app.post('/api/settings', requireAuth, (req, res) => {
     res.json({ success: true, needRestart: isServerRunning() });
   } catch (e) {
     res.status(500).json({ error: '설정 저장 실패: ' + e.message });
+  }
+});
+
+// --- 프리셋 API ---
+app.get('/api/presets', requireAuth, (req, res) => {
+  try {
+    if (!fs.existsSync(PRESETS_DIR)) return res.json([]);
+    const files = fs.readdirSync(PRESETS_DIR).filter(f => f.endsWith('.json'));
+    const presets = files.map(f => {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(PRESETS_DIR, f), 'utf-8'));
+        return { name: data.name, description: data.description || '', createdAt: data.createdAt };
+      } catch { return null; }
+    }).filter(Boolean).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json(presets);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/presets', requireAuth, async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: '프리셋 이름을 입력하세요.' });
+    const safeName = name.trim().replace(/[<>:"/\\|?*]/g, '_');
+    if (!fs.existsSync(PRESETS_DIR)) fs.mkdirSync(PRESETS_DIR, { recursive: true });
+    const settings = await getActiveSettings();
+    const preset = { name: safeName, description: description || '', createdAt: new Date().toISOString(), settings };
+    fs.writeFileSync(path.join(PRESETS_DIR, `${safeName}.json`), JSON.stringify(preset, null, 2), 'utf-8');
+    addLog(`프리셋 저장: ${safeName}`);
+    res.json({ success: true, name: safeName });
+  } catch (e) {
+    res.status(500).json({ error: '프리셋 저장 실패: ' + e.message });
+  }
+});
+
+app.post('/api/presets/:name/load', requireAuth, (req, res) => {
+  try {
+    const filePath = path.join(PRESETS_DIR, `${req.params.name}.json`);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: '프리셋을 찾을 수 없습니다.' });
+    const preset = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    const current = readSettings() || {};
+    for (const def of SETTING_DEFS) {
+      if (preset.settings[def.key] !== undefined) {
+        current[def.key] = preset.settings[def.key];
+      }
+    }
+    writeSettings(current);
+    addLog(`프리셋 불러오기: ${req.params.name}`);
+    res.json({ success: true, needRestart: isServerRunning() });
+  } catch (e) {
+    res.status(500).json({ error: '프리셋 불러오기 실패: ' + e.message });
+  }
+});
+
+app.delete('/api/presets/:name', requireAuth, (req, res) => {
+  try {
+    const filePath = path.join(PRESETS_DIR, `${req.params.name}.json`);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: '프리셋을 찾을 수 없습니다.' });
+    fs.unlinkSync(filePath);
+    addLog(`프리셋 삭제: ${req.params.name}`);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: '프리셋 삭제 실패: ' + e.message });
   }
 });
 
