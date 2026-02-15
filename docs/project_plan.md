@@ -107,7 +107,7 @@ palworld-panel/
 1. **.env.example**: 삭제 상태이므로 복구하거나 README만으로 환경변수 문서화 유지
 2. **보안**: SESSION_SECRET·PANEL_PASSWORD는 프로덕션에서 강한 값 사용 권장
 3. **공개 배포 시**: `.env`는 .gitignore에 포함되어 커밋되지 않음. Palback 경로는 `palback_config.cmd`(예시: palback_config.cmd.example)로 분리하여 개인 경로가 저장소에 포함되지 않도록 함.
-3. **서버 정지**: `stopServer()`에서 taskkill 후 `serverProcess` 정리 — 실제로는 taskkill만으로 종료되는 경우가 많아 process 참조는 보조 수준
+3. **서버 정지**: `stopServer()`에서 taskkill 후 `serverProcess` 정리 — 실제로는 taskkill만으로 종료되는 경우가 많아 process 참조는 보조 수준. **공지 후 종료**(`stopServerWithNotice`): 공지 → 10초 후 shutdown(60) API 호출 → 70초 후에도 프로세스가 살아 있으면 강제 종료(stopServer) 폴백으로 실제 종료 보장.
 4. **로그**: 메모리만 사용 → 재시작 시 소실, 파일 로그나 로그 rotate는 미구현
 5. **에러 처리**: 설정 파일 없음/읽기 실패 시 메인 페이지에서 경고 메시지 표시
 

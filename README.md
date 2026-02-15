@@ -66,24 +66,25 @@ copy .env.example .env
 `.env` 파일을 메모장으로 열어 아래 항목들을 수정하세요:
 
 ```env
-# [필수] 패널 로그인 비밀번호 (기본값 admin → 반드시 변경)
-PANEL_PASSWORD=내비밀번호
+# [필수] 패널 로그인 비밀번호 (이 웹 패널 전용. 스팀 비밀번호 아님. 기본값 admin → 반드시 변경)
+PANEL_PASSWORD=원하는비밀번호
 
 # [필수] PalServer.exe 경로 (패널에서 서버 시작/정지에 사용)
-PAL_SERVER_PATH=C:\Program Files (x86)\Steam\steamapps\common\PalServer\PalServer.exe
+PAL_SERVER_PATH=스팀에서의 내 팰월드 경로\PalServer\PalServer.exe
 
 # [필수] PalWorldSettings.ini 경로 (설정 편집에 사용)
-PAL_SETTINGS_PATH=C:\Program Files (x86)\Steam\steamapps\common\PalServer\Pal\Saved\Config\WindowsServer\PalWorldSettings.ini
+PAL_SETTINGS_PATH=스팀에서의 내 팰월드 경로\PalServer\Pal\Saved\Config\WindowsServer\PalWorldSettings.ini
 
 # [권장] REST API 비밀번호 (PalWorldSettings.ini의 AdminPassword와 동일하게)
-# 미설정 시 PANEL_PASSWORD 값을 사용
-REST_API_PASSWORD=내관리자비밀번호
+# 미설정 시 PANEL_PASSWORD 값 사용 (팰월드 서버 관리자 비밀번호, 스팀 비밀번호 아님)
+REST_API_PASSWORD=원하는관리자비밀번호
 
 # [선택] 백업 활성화 (둘 다 설정해야 작동)
-PAL_SAVE_PATH=C:\Program Files (x86)\Steam\steamapps\common\PalServer\Pal\Saved\SaveGames\0\YOUR_WORLD_ID
+PAL_SAVE_PATH=스팀에서의 내 팰월드 경로\PalServer\Pal\Saved\SaveGames\0\YOUR_WORLD_ID
 PAL_BACKUP_ROOT=D:\PalworldBackups
 ```
 
+> **스팀에서의 내 팰월드 경로** = Steam에 팰월드 서버를 설치한 폴더 경로 (예: `C:\Program Files (x86)\Steam\steamapps\common`)
 > `YOUR_WORLD_ID`는 `SaveGames\0\` 폴더 안에 있는 16자리 영숫자 폴더명입니다.
 > 예: `SaveGames\0\2F8A3B4C1D5E6F70`
 
@@ -129,7 +130,6 @@ data/
 ├── palworld.db          # SQLite DB (플레이어 통계, 세션 기록)
 ├── player_list.txt      # 접속했던 플레이어 목록 (레거시, DB와 병행)
 ├── playtime.txt         # 누적 플레이타임 (레거시, DB와 병행)
-├── panel_server_log.txt # 패널에서 서버를 켰을 때의 로그
 └── presets/             # 서버 설정 프리셋 (JSON)
 ```
 
@@ -143,10 +143,11 @@ data/
 | 변수 | 설명 | 기본값 |
 |------|------|--------|
 | `PANEL_PASSWORD` | 패널 로그인 비밀번호 | `admin` |
+| `PANEL_ICON` | 헤더·로그인 화면 아이콘 (이모지 1개) | `🎮` |
 | `PORT` | 패널 웹 포트 | `3000` |
 | `SESSION_SECRET` | 세션 시크릿 키 | 자동생성 |
-| `PAL_SETTINGS_PATH` | PalWorldSettings.ini 경로 | Steam 기본 경로 |
-| `PAL_SERVER_PATH` | PalServer.exe 경로 | Steam 기본 경로 |
+| `PAL_SETTINGS_PATH` | PalWorldSettings.ini 경로 | 스팀에서의 내 팰월드 경로 기준 |
+| `PAL_SERVER_PATH` | PalServer.exe 경로 | 스팀에서의 내 팰월드 경로 기준 |
 | `PAL_SERVER_ARGS` | 서버 실행 인자 | `-log -stdlog -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS` |
 | `PAL_SAVE_PATH` | 세이브 폴더 경로 (백업용) | 미설정 시 백업 비활성 |
 | `PAL_BACKUP_ROOT` | 백업 저장 폴더 | 미설정 시 백업 비활성 |
@@ -159,19 +160,21 @@ data/
 | `REST_API_PASSWORD` | REST API 비밀번호 (=AdminPassword) | `PANEL_PASSWORD` 사용 |
 | `REST_API_POLL_INTERVAL` | REST API 폴링 간격 (ms) | `5000` |
 
+- **아이콘:** 헤더/로그인 큰 아이콘은 `.env`의 `PANEL_ICON`(이모지 1개)으로 변경. 브라우저 탭 아이콘은 `public/favicon.ico` 파일을 넣으면 적용됩니다.
+
 ## REST API 설정 (권장)
 
 팰월드 서버의 REST API를 활성화하면 실시간 플레이어 감지, 공지 전송, 서버 저장 등의 기능을 사용할 수 있습니다.
 
-### PalWorldSettings.ini 에서 설정
+### 자동 적용
 
-```ini
-RESTAPIEnabled=True
-RESTAPIPort=8212
-AdminPassword="your-admin-password"
-```
+패널이 시작될 때 **PalWorldSettings.ini**에 아래 값을 자동으로 넣어 줍니다. ini를 직접 수정할 필요 없이 `.env`만 설정하면 됩니다.
 
-또는 웹 패널 > 서버 설정 탭에서 직접 변경 가능합니다.
+- `RESTAPIEnabled=True`
+- `RESTAPIPort=8212` (또는 `.env`의 `REST_API_PORT`)
+- `AdminPassword` = `.env`의 `REST_API_PASSWORD` (미설정 시 `PANEL_PASSWORD` 사용)
+
+웹 패널 > 서버 설정 탭에서 수동으로 바꿀 수도 있습니다.
 
 ### .env 에서 연결
 
@@ -247,14 +250,7 @@ PAL_BACKUP_ROOT/
 
 ## 로그
 
-패널의 모든 주요 동작은 `data/panel_server_log.txt`에 기록됩니다.
-
-```
-[2026-02-15 14:30:15] [수동] 서버 시작 요청
-[2026-02-15 14:30:15] 서버 시작 중...
-[2026-02-15 15:00:00] [알림] 감자튀김님 접속 1시간 경과 공지
-[2026-02-15 06:00:00] [자동재시작] 접속자 없음 → 서버 재시작 시작
-```
+패널 화면의 로그 영역에는 서버 시작/정지 등 동작이 최근 50줄까지 표시됩니다.
 
 | 태그 | 설명 |
 |------|------|
@@ -268,12 +264,18 @@ PAL_BACKUP_ROOT/
 - 서버 실행 여부와 관계없이 항상 파일에 기록
 - 웹 UI에는 최근 50줄만 표시
 
-## 외부 접속 (ngrok)
+## 외부 접속 (ngrok / Cloudflare) (26.02.15 기준)
 
-패널을 외부에서 접속하려면 [ngrok](https://ngrok.com/)을 사용할 수 있습니다.
-포트 포워딩 없이 HTTPS 터널을 통해 외부에서 패널에 접속할 수 있어 편리합니다.
+포트 포워딩 없이 HTTPS 터널로 패널을 열 수 있습니다. 대표적으로 **ngrok**과 **Cloudflare Tunnel(cloudflared)** 두 방식이 있습니다.
 
-### 설정 방법
+| | ngrok | Cloudflare Tunnel |
+|---|--------|-------------------|
+| **장점** | 설정 간단, 가입 후 바로 사용. **고정 URL** (무료도 동일) | 무료, 계정 세팅하면 **고정 URL** 사용 가능, Cloudflare 보안 기능 활용 |
+| **단점** | 최초 접속 시 ngrok 보안/경고 화면이 한 번 뜸 | 초기 계정·도메인(또는 trycloudflare) 설정 필요 |
+
+> 이 프로젝트에서는 **ngrok**을 사용합니다. 설정이 간단하고, 비밀번호 인증만으로도 쓰기 편해서 선택했습니다.
+
+### ngrok 설정 방법
 
 1. [ngrok 가입](https://dashboard.ngrok.com/signup) 후 설치
 2. 인증 토큰 설정:
@@ -286,12 +288,12 @@ PAL_BACKUP_ROOT/
    ```
 4. 출력된 `https://xxxx.ngrok-free.dev` 주소로 외부 접속
 
-> **참고:** 이 프로젝트에서는 `StartServer.bat`에서 패널과 ngrok 터널을 함께 실행하도록 설정되어 있습니다.
-> 필수는 아니며, 로컬에서만 사용한다면 ngrok 없이 `npm start`만으로 충분합니다.
+Cloudflare 방식은 [Cloudflare Tunnel(cloudflared)](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/) 문서를 참고하세요.
+
+> **참고:** 이 프로젝트에서는 `StartServer.bat`에서 패널과 ngrok 터널을 함께 실행하도록 설정되어 있습니다. 로컬 전용이면 ngrok 없이 `npm start`만으로 충분합니다.
 
 ## 참고
 
 - Windows 전용 (PalServer.exe 프로세스 관리, robocopy 백업)
-- 포트 3000이 방화벽에서 허용되어야 외부 접속 가능
 - 설정 변경 후 서버 재시작 필요
 - 패널에서 서버를 시작하면 `detached` 모드로 실행되므로 패널을 종료해도 서버는 계속 실행됨

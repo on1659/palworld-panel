@@ -17,19 +17,44 @@ const SETTINGS_PATH = process.env.PAL_SETTINGS_PATH || DEFAULT_SETTINGS_PATH;
 const SERVER_PATH = process.env.PAL_SERVER_PATH || DEFAULT_SERVER_PATH;
 const SERVER_ARGS = (process.env.PAL_SERVER_ARGS || '-log -stdlog -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS').split(' ').filter(Boolean);
 const PANEL_PASSWORD = process.env.PANEL_PASSWORD || 'admin';
+const PANEL_ICON = process.env.PANEL_ICON || '🎮';
 const PAL_SAVE_PATH = process.env.PAL_SAVE_PATH || '';
 const PAL_BACKUP_ROOT = process.env.PAL_BACKUP_ROOT || '';
 const PAL_LOG_PATH = process.env.PAL_LOG_PATH || path.join(path.dirname(SERVER_PATH), 'Pal', 'Saved', 'Logs', 'Pal-CRC.log');
 const PLAYER_DATA_DIR = process.env.PLAYER_DATA_DIR || path.join(__dirname, 'data');
 const PLAYER_LIST_FILE = path.join(PLAYER_DATA_DIR, 'player_list.txt');
 const PLAYTIME_FILE = path.join(PLAYER_DATA_DIR, 'playtime.txt');
-const PANEL_SERVER_LOG_FILE = path.join(PLAYER_DATA_DIR, 'panel_server_log.txt');
 const DB_PATH = path.join(PLAYER_DATA_DIR, 'palworld.db');
 const PRESETS_DIR = path.join(PLAYER_DATA_DIR, 'presets');
+const PANEL_LOG_DIR = path.join(PLAYER_DATA_DIR, 'logs');
+const PANEL_LOG_FILE = path.join(PANEL_LOG_DIR, 'panel.log');
+const PANEL_CONFIG_FILE = path.join(PLAYER_DATA_DIR, 'panel_config.json');
 const PANEL_START_TIME = Date.now();
+
+function readPanelConfig() {
+  try {
+    if (fs.existsSync(PANEL_CONFIG_FILE)) {
+      const raw = fs.readFileSync(PANEL_CONFIG_FILE, 'utf8');
+      const o = JSON.parse(raw);
+      return { shutdownCountdownSec: Math.min(300, Math.max(1, parseInt(o.shutdownCountdownSec, 10) || 60)) };
+    }
+  } catch (_) {}
+  return { shutdownCountdownSec: 60 };
+}
+
+function writePanelConfig(config) {
+  try {
+    const o = readPanelConfig();
+    if (config.shutdownCountdownSec !== undefined) o.shutdownCountdownSec = Math.min(300, Math.max(1, parseInt(config.shutdownCountdownSec, 10) || 60));
+    fs.writeFileSync(PANEL_CONFIG_FILE, JSON.stringify(o, null, 2), 'utf8');
+  } catch (e) {
+    console.error('panel_config 저장 실패:', e.message);
+  }
+}
 
 // --- SQLite DB 초기화 ---
 if (!fs.existsSync(PLAYER_DATA_DIR)) fs.mkdirSync(PLAYER_DATA_DIR, { recursive: true });
+if (!fs.existsSync(PANEL_LOG_DIR)) fs.mkdirSync(PANEL_LOG_DIR, { recursive: true });
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL'); // 성능 향상
 db.pragma('foreign_keys = ON');
@@ -657,18 +682,46 @@ const MAX_LOG_LINES = 50;
 let stdoutLineBuf = '';
 let stderrLineBuf = '';
 
+const pendingLogWrites = []; // 쓰기 실패 시 재시도용
+
 function addLog(line) {
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString('ko-KR');
+  const timeStr = new Date().toLocaleTimeString('ko-KR');
   const entry = `[${timeStr}] ${line}`;
   serverLogs.push(entry);
   if (serverLogs.length > MAX_LOG_LINES) serverLogs.shift();
-  try {
-    if (!fs.existsSync(PLAYER_DATA_DIR)) fs.mkdirSync(PLAYER_DATA_DIR, { recursive: true });
-    const pad = (n) => String(n).padStart(2, '0');
-    const fileTs = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-    fs.appendFileSync(PANEL_SERVER_LOG_FILE, `[${fileTs}] ${line}\n`, 'utf-8');
-  } catch (_) {}
+
+  function writeToFile(str) {
+    try {
+      if (!fs.existsSync(PANEL_LOG_DIR)) fs.mkdirSync(PANEL_LOG_DIR, { recursive: true });
+      fs.appendFileSync(PANEL_LOG_FILE, str, 'utf8');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  if (!writeToFile(entry + '\n')) {
+    pendingLogWrites.push(entry + '\n');
+    setTimeout(() => {
+      while (pendingLogWrites.length > 0) {
+        const s = pendingLogWrites.shift();
+        if (writeToFile(s)) continue;
+        pendingLogWrites.unshift(s);
+        break;
+      }
+    }, 50);
+  }
+  // 대기 중인 이전 실패 분도 한 번 시도
+  if (pendingLogWrites.length > 0 && pendingLogWrites[0] !== entry + '\n') {
+    let i = 0;
+    while (i < pendingLogWrites.length) {
+      if (writeToFile(pendingLogWrites[i])) {
+        pendingLogWrites.splice(i, 1);
+      } else {
+        i++;
+      }
+    }
+  }
 }
 
 // --- Player state (REST API only) ---
@@ -829,7 +882,7 @@ function getPalServerPids() {
     const out = execSync('tasklist /FO CSV /NH', { encoding: 'utf8', windowsHide: true });
     for (const line of out.split('\n')) {
       const trimmed = line.trim();
-      if (!trimmed || trimmed.indexOf('PalServer') === -1) continue;
+      if (!trimmed || trimmed.toLowerCase().indexOf('palserver') === -1) continue;
       const parts = trimmed.split('","');
       if (parts.length >= 2) {
         const pid = parts[1].replace(/^"|"/g, '').trim();
@@ -848,8 +901,16 @@ function isServerRunning() {
   return serverProcess !== null && serverProcess.exitCode === null;
 }
 
-function startServer() {
-  if (isServerRunning()) return { success: false, message: '서버가 이미 실행 중입니다.' };
+async function startServer() {
+  if (isServerRunning()) {
+    addLog('[시작] 실행 중으로 판단됨. 2.5초 후 재확인...');
+    await new Promise(r => setTimeout(r, 2500));
+    if (isServerRunning()) {
+      const pids = getPalServerPids();
+      addLog('[시작] 재확인 후에도 실행 중 (PID: ' + (pids.length ? pids.join(', ') : 'serverProcess') + '). 강제 종료 후 다시 시도하세요.');
+      return { success: false, message: '서버가 이미 실행 중입니다. 강제 종료 후 다시 시도하세요.' };
+    }
+  }
   try {
     addLog('서버 시작 중...');
     serverProcess = spawn(SERVER_PATH, SERVER_ARGS, {
@@ -970,8 +1031,45 @@ function runScheduledBackup() {
   }
 }
 
+function doForceStopProcesses() {
+  addLog('서버 강제 정지 중...');
+  if (process.platform === 'win32') {
+    for (let round = 0; round < 2; round++) {
+      const pids = getPalServerPids();
+      if (pids.length === 0) {
+        if (round === 0) addLog('[정지디버그] tasklist에서 PalServer PID 0개');
+        break;
+      }
+      addLog(`[정지디버그] tasklist PalServer PID ${pids.length}개: [${pids.join(', ')}] (${round === 0 ? '1차' : '2차'} 종료)`);
+      for (const pid of pids) {
+        try {
+          execSync(`taskkill /PID ${pid} /F`, { encoding: 'utf8', windowsHide: true });
+          addLog(`PID ${pid} 종료됨`);
+        } catch (err) {
+          addLog(`PID ${pid} 종료 시도 실패: ${err.message}`);
+        }
+      }
+      if (round === 0 && pids.length > 0) {
+        addLog('2초 대기 후 잔여 프로세스 재확인...');
+        try { execSync('timeout /t 2 /nobreak > nul', { windowsHide: true }); } catch (_) {}
+      }
+    }
+  }
+  if (serverProcess) {
+    try { serverProcess.kill('SIGTERM'); } catch (_) {}
+    serverProcess = null;
+  }
+  addLog('서버 정지 완료. 재시작 가능합니다.');
+}
+
 async function stopServer() {
-  if (!isServerRunning()) return { success: false, message: '서버가 실행 중이 아닙니다.' };
+  const pidsNow = process.platform === 'win32' ? getPalServerPids() : [];
+  addLog(`[정지디버그] 정지 요청. tasklist PID 개수=${pidsNow.length}, serverProcess=${serverProcess ? '있음' : 'null'}, REST_API=${REST_API_ENABLED}, restApiAvailable=${restApiClient.isAvailable}`);
+
+  if (!isServerRunning()) {
+    addLog('[정지디버그] isServerRunning=false → 서버가 실행 중이 아닙니다 반환');
+    return { success: false, message: '서버가 실행 중이 아닙니다.' };
+  }
 
   // REST API 사용 가능하면 정상 종료 시도 (30초 경고)
   if (REST_API_ENABLED && restApiClient.isAvailable) {
@@ -980,40 +1078,25 @@ async function stopServer() {
       const result = await restApiClient.shutdown(30, '서버가 30초 후 종료됩니다');
       addLog('[REST-API] ' + result.message);
 
-      // REST API 종료 후 프로세스 핸들 정리
+      // 35초 후에도 프로세스가 살아 있으면 강제 종료 (shutdown 미동작 시 보장)
       setTimeout(() => {
-        if (serverProcess) {
-          serverProcess = null;
+        if (isServerRunning()) {
+          addLog('[REST-API] 35초 경과 후에도 서버 실행 중 → 강제 종료');
+          doForceStopProcesses();
+        } else {
+          if (serverProcess) serverProcess = null;
         }
-      }, 32000); // 30초 + 2초 여유
+      }, 35000);
 
       return { success: true, message: result.message };
     } catch (e) {
       addLog(`[REST-API] 정상 종료 실패: ${e.message}, 강제 종료로 전환`);
-      // REST API 실패 시 강제 종료로 fallback
     }
   }
 
-  // REST API 미사용 또는 실패 시 기존 방식(강제 종료)
+  // REST API 미사용 또는 실패 시 즉시 강제 종료
   try {
-    addLog('서버 강제 정지 중...');
-    if (process.platform === 'win32') {
-      const pids = getPalServerPids();
-      for (const pid of pids) {
-        try {
-          execSync(`taskkill /PID ${pid} /F`, { encoding: 'utf8', windowsHide: true });
-          addLog(`PID ${pid} 종료됨`);
-        } catch (err) {
-          addLog(`PID ${pid} 종료 시도 실패 (이미 종료됐을 수 있음)`);
-        }
-      }
-      if (pids.length === 0) addLog('실행 중인 PalServer 프로세스 없음');
-    }
-    if (serverProcess) {
-      try { serverProcess.kill('SIGTERM'); } catch (_) {}
-      serverProcess = null;
-    }
-    addLog('서버 정지 완료');
+    doForceStopProcesses();
     return { success: true, message: '서버를 정지했습니다.' };
   } catch (e) {
     addLog('서버 정지 실패: ' + e.message);
@@ -1023,9 +1106,10 @@ async function stopServer() {
 
 /**
  * 공지 → 대기 → 종료 (플레이어가 있을 때 사용)
- * 60초 공지 → 10초 후 실제 종료 (총 70초)
+ * countdownSec: 공지 후 실제 종료까지 대기 시간(초, 1~300). 10초 후 shutdown(countdownSec) 요청 → (countdownSec+10)초 후 강제 종료
  */
-async function stopServerWithNotice() {
+async function stopServerWithNotice(countdownSec = 60) {
+  const sec = Math.min(300, Math.max(1, parseInt(countdownSec, 10) || 60));
   if (!isServerRunning()) return { success: false, message: '서버가 실행 중이 아닙니다.' };
 
   if (!REST_API_ENABLED || !restApiClient.isAvailable) {
@@ -1033,32 +1117,39 @@ async function stopServerWithNotice() {
   }
 
   try {
-    // Send announcement: 60초 후 종료
-    addLog('[공지] 60초 후 서버가 종료됩니다...');
-    await restApiClient.announce(`[${getServerName()}] ⚠️ 서버가 60초 후 종료됩니다. 안전한 장소에서 저장해주세요.`);
+    addLog(`[공지] ${sec}초 후 서버가 종료됩니다...`);
+    await restApiClient.announce(`[${getServerName()}] ⚠️ 서버가 ${sec}초 후 종료됩니다. 안전한 장소에서 저장해주세요.`);
+    addLog('[공지] 공지 전송 완료 (게임 내 채팅에 표시됨)');
 
-    // Wait 10 seconds, then call shutdown with 60s wait (but we'll actually force it)
-    setTimeout(async () => {
-      try {
-        addLog('[서버 종료] shutdown 요청 전송 중...');
-        await restApiClient.shutdown(60, '서버가 곧 종료됩니다');
+    const totalWaitMs = (sec + 10) * 1000;
 
-        // Cleanup process handle after shutdown completes
-        setTimeout(() => {
-          if (serverProcess) {
-            serverProcess = null;
-          }
-        }, 65000); // 60s + 5s buffer
-      } catch (e) {
-        addLog('[서버 종료] shutdown 실패, 강제 종료로 전환: ' + e.message);
-        // Fallback to force stop
-        setTimeout(async () => {
-          await stopServer();
-        }, 5000);
-      }
-    }, 10000); // Wait 10 seconds before sending shutdown
+    const shutdownLater = () => {
+      (async () => {
+        try {
+          addLog('[서버 종료] 10초 후 shutdown 요청 전송...');
+          await restApiClient.shutdown(sec, '서버가 곧 종료됩니다');
+          addLog(`[서버 종료] shutdown 요청 완료. 서버가 ${sec}초 내 자동 종료됩니다.`);
 
-    return { success: true, message: '공지가 전송되었습니다. 10초 후 종료 프로세스가 시작됩니다.' };
+          setTimeout(() => {
+            if (isServerRunning()) {
+              addLog(`[서버 종료] ${sec + 10}초 경과 후에도 서버가 실행 중 → 강제 종료`);
+              stopServer().catch(e => addLog('[서버 종료] 강제 종료 실패: ' + e.message));
+            } else {
+              if (serverProcess) serverProcess = null;
+            }
+          }, totalWaitMs - 10000);
+        } catch (e) {
+          addLog('[서버 종료] shutdown API 실패, 5초 후 강제 종료: ' + e.message);
+          setTimeout(() => {
+            stopServer().catch(err => addLog('[서버 종료] 강제 종료 실패: ' + err.message));
+          }, 5000);
+        }
+      })().catch(e => addLog('[서버 종료] 예외: ' + e.message));
+    };
+
+    setTimeout(shutdownLater, 10000);
+
+    return { success: true, message: `공지가 전송되었습니다. 10초 후 종료 요청이 나가고, ${sec}초 후 서버가 꺼집니다.` };
   } catch (e) {
     addLog('[공지 전송 실패]: ' + e.message);
     return { success: false, message: '공지 전송 실패: ' + e.message };
@@ -1074,41 +1165,26 @@ async function forceStopServer() {
   try {
     addLog('[강제 종료] 즉시 서버를 종료합니다...');
 
-    // Try REST API force stop first
     if (REST_API_ENABLED && restApiClient.isAvailable) {
       try {
         await restApiClient.stop();
         addLog('[강제 종료] REST API stop 호출 완료');
-
+        // 5초 후에도 살아 있으면 taskkill
         setTimeout(() => {
-          if (serverProcess) serverProcess = null;
-        }, 3000);
-
+          if (isServerRunning()) {
+            addLog('[강제 종료] 5초 후에도 실행 중 → taskkill');
+            doForceStopProcesses();
+          } else {
+            if (serverProcess) serverProcess = null;
+          }
+        }, 5000);
         return { success: true, message: '서버를 강제 종료했습니다.' };
       } catch (e) {
         addLog('[강제 종료] REST API 실패, taskkill로 전환: ' + e.message);
       }
     }
 
-    // Fallback to taskkill
-    if (process.platform === 'win32') {
-      const pids = getPalServerPids();
-      for (const pid of pids) {
-        try {
-          execSync(`taskkill /PID ${pid} /F`, { encoding: 'utf8', windowsHide: true });
-          addLog(`[강제 종료] PID ${pid} 종료됨`);
-        } catch (err) {
-          addLog(`[강제 종료] PID ${pid} 종료 실패`);
-        }
-      }
-    }
-
-    if (serverProcess) {
-      try { serverProcess.kill('SIGKILL'); } catch (_) {}
-      serverProcess = null;
-    }
-
-    addLog('[강제 종료] 완료');
+    doForceStopProcesses();
     return { success: true, message: '서버를 강제 종료했습니다.' };
   } catch (e) {
     addLog('[강제 종료 실패]: ' + e.message);
@@ -1119,7 +1195,7 @@ async function forceStopServer() {
 // --- Routes ---
 app.get('/login', (req, res) => {
   if (req.session.authenticated) return res.redirect('/');
-  res.render('login', { error: null });
+  res.render('login', { error: null, panelIcon: PANEL_ICON });
 });
 
 app.post('/login', (req, res) => {
@@ -1127,7 +1203,7 @@ app.post('/login', (req, res) => {
     req.session.authenticated = true;
     return res.redirect('/');
   }
-  res.render('login', { error: '비밀번호가 틀렸습니다.' });
+  res.render('login', { error: '비밀번호가 틀렸습니다.', panelIcon: PANEL_ICON });
 });
 
 app.get('/logout', (req, res) => {
@@ -1155,7 +1231,7 @@ async function getActiveSettings() {
 app.get('/', requireAuth, async (req, res) => {
   const settings = await getActiveSettings();
   const categories = ['전체', ...new Set(SETTING_DEFS.map(d => d.category))];
-  res.render('index', { settings, defs: SETTING_DEFS, categories, running: isServerRunning(), settingsPath: SETTINGS_PATH });
+  res.render('index', { settings, defs: SETTING_DEFS, categories, running: isServerRunning(), settingsPath: SETTINGS_PATH, panelIcon: PANEL_ICON });
 });
 
 // API
@@ -1266,9 +1342,18 @@ app.delete('/api/presets/:name', requireAuth, (req, res) => {
   }
 });
 
-app.post('/api/server/start', requireAuth, (req, res) => {
+app.get('/api/panel-config', requireAuth, (req, res) => {
+  res.json(readPanelConfig());
+});
+app.post('/api/panel-config', requireAuth, express.json(), (req, res) => {
+  const cfg = req.body || {};
+  if (cfg.shutdownCountdownSec !== undefined) writePanelConfig({ shutdownCountdownSec: cfg.shutdownCountdownSec });
+  res.json(readPanelConfig());
+});
+
+app.post('/api/server/start', requireAuth, async (req, res) => {
   addLog('[수동] 서버 시작 요청');
-  const result = startServer();
+  const result = await startServer();
   res.json(result);
 });
 app.post('/api/server/stop', requireAuth, async (req, res) => {
@@ -1281,12 +1366,18 @@ app.post('/api/server/restart', requireAuth, async (req, res) => {
   await stopServer();
   const waitTime = REST_API_ENABLED && restApiClient.isAvailable ? 33000 : 3000;
   await new Promise(r => setTimeout(r, waitTime));
-  res.json(startServer());
+  const result = await startServer();
+  res.json(result);
 });
 
-app.post('/api/server/stop-with-notice', requireAuth, async (req, res) => {
+app.post('/api/server/stop-with-notice', requireAuth, express.json(), async (req, res) => {
   addLog('[수동] 공지 후 서버 종료 요청');
-  const result = await stopServerWithNotice();
+  const countdownSec = req.body && req.body.countdownSec !== undefined
+    ? Math.min(300, Math.max(1, parseInt(req.body.countdownSec, 10) || 60))
+    : readPanelConfig().shutdownCountdownSec;
+  writePanelConfig({ shutdownCountdownSec: countdownSec });
+  const result = await stopServerWithNotice(countdownSec);
+  if (result.success) result.countdownSec = countdownSec;
   res.json(result);
 });
 
@@ -1373,7 +1464,7 @@ loadPlaytime();
       }
     }
     if (allPlayers.length > 0) {
-      console.log(`👤 플레이어 이름 ${allPlayers.length}개 복원 완료`);
+      addLog(`👤 플레이어 이름 ${allPlayers.length}개 복원 완료`);
     }
 
     // 열린 세션 → 패널 시작 시점 기준으로 닫기 (실제 접속자는 즉시 pollRestApi에서 새 세션 생성)
@@ -1387,7 +1478,7 @@ loadPlaytime();
       addLog(`[복원] ${name} 이전 세션 종료 (${mins.toFixed(1)}분)`);
     }
     if (openSessions.length > 0) {
-      console.log(`📋 열린 세션 ${openSessions.length}개 → 패널 시작 시점 기준으로 종료 처리`);
+      addLog(`📋 열린 세션 ${openSessions.length}개 → 패널 시작 시점 기준으로 종료 처리`);
     }
   } catch (e) {
     console.error('DB 복원 실패:', e.message);
@@ -1423,7 +1514,7 @@ loadPlaytime();
         });
       });
       migrate();
-      console.log('📦 playtime.txt → DB 마이그레이션 완료');
+      addLog('📦 playtime.txt → DB 마이그레이션 완료');
     }
 
     // player_list.txt에서 추가 마이그레이션
@@ -1437,7 +1528,7 @@ loadPlaytime();
           insertPlayer.run(userId, playerNames[userId] || userId, now, now);
         }
       });
-      console.log('📦 player_list.txt → DB 마이그레이션 완료');
+      addLog('📦 player_list.txt → DB 마이그레이션 완료');
     }
   } catch (e) {
     console.error('마이그레이션 실패:', e.message);
@@ -1445,11 +1536,12 @@ loadPlaytime();
 })();
 
 app.listen(PORT, () => {
-  console.log(`🎮 팰월드 서버 패널 실행 중: http://localhost:${PORT}`);
+  addLog(`🎮 팰월드 서버 패널 실행 중: http://localhost:${PORT}`);
+  addLog(`--- 패널 로그 파일: ${PANEL_LOG_FILE}`);
   if (PAL_BACKUP_ROOT) {
     setTimeout(runScheduledBackup, 60 * 1000);
     setInterval(runScheduledBackup, AUTO_BACKUP_INTERVAL_MS);
-    console.log('⏱️ 자동 백업: 서버 켜져 있을 때 3시간마다 실행, 24시간 지난 백업 자동 삭제');
+    addLog('⏱️ 자동 백업: 서버 켜져 있을 때 3시간마다 실행, 24시간 지난 백업 자동 삭제');
   }
 
   // REST API polling for player detection
@@ -1458,7 +1550,7 @@ app.listen(PORT, () => {
     try {
       await pollRestApi();
       if (currentOnline.size > 0) {
-        console.log(`🔍 시작 시 접속자 감지: ${currentOnline.size}명 온라인`);
+        addLog(`🔍 시작 시 접속자 감지: ${currentOnline.size}명 온라인`);
       }
     } catch (_) {}
   }, 2000);
@@ -1550,15 +1642,15 @@ app.listen(PORT, () => {
       const stopResult = await stopServer();
       addLog(`[자동재시작] 서버 종료: ${stopResult.message}`);
       // 종료 대기 후 시작 (35초 대기 - shutdown 30초 + 여유 5초)
-      setTimeout(() => {
+      setTimeout(async () => {
         if (!isServerRunning()) {
-          const startResult = startServer();
+          const startResult = await startServer();
           addLog(`[자동재시작] 서버 시작: ${startResult.message}`);
         } else {
           addLog('[자동재시작] 서버가 아직 실행 중, 10초 후 재시도');
-          setTimeout(() => {
+          setTimeout(async () => {
             if (!isServerRunning()) {
-              const startResult = startServer();
+              const startResult = await startServer();
               addLog(`[자동재시작] 서버 시작: ${startResult.message}`);
             } else {
               addLog('[자동재시작] 서버 종료 실패, 수동 확인 필요');
@@ -1587,5 +1679,5 @@ app.listen(PORT, () => {
   }, msUntilNext6AM());
 
   const nextRestart = new Date(Date.now() + msUntilNext6AM());
-  console.log(`🔄 자동 재시작 예약: 매일 오전 6시 (다음: ${nextRestart.toLocaleString('ko-KR')})`);
+  addLog(`🔄 자동 재시작 예약: 매일 오전 6시 (다음: ${nextRestart.toLocaleString('ko-KR')})`);
 });

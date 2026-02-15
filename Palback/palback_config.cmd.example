@@ -2,5 +2,6 @@
 REM === Palback 로컬 설정 (이 파일은 Git에 올리지 마세요) ===
 REM 이 파일을 palback_config.cmd 로 복사한 뒤 경로를 수정하세요.
 
-set "PAL_SAVE_PATH=C:\Program Files (x86)\Steam\steamapps\common\PalServer\Pal\Saved\SaveGames\0\YOUR_WORLD_ID"
+REM 스팀에서의 내 팰월드 경로 = Steam에 팰월드 서버 설치한 폴더 (예: C:\Program Files (x86)\Steam\steamapps\common)
+set "PAL_SAVE_PATH=스팀에서의 내 팰월드 경로\PalServer\Pal\Saved\SaveGames\0\YOUR_WORLD_ID"
 set "PAL_BACKUP_ROOT=D:\PalworldBackups"

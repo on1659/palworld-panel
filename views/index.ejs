@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>팰월드 서버 패널</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 50%, #0f0f23 100%); min-height: 100vh; }
@@ -66,6 +67,11 @@
       <div class="p-6">
         <h3 class="text-xl font-bold text-white mb-4" id="shutdown-modal-title">서버 종료 확인</h3>
         <div id="shutdown-modal-body" class="text-gray-300 mb-6 space-y-2"></div>
+        <div class="mb-4 flex items-center gap-2">
+          <label for="shutdown-countdown-sec" class="text-sm text-gray-400">종료 대기 시간(초):</label>
+          <input type="number" id="shutdown-countdown-sec" min="1" max="300" value="60" class="w-20 px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-white text-sm">
+          <span class="text-xs text-gray-500">(1~300, 10초 미만이면 곧바로 N초 뒤 종료 표시)</span>
+        </div>
         <div class="flex gap-3">
           <button onclick="confirmShutdown()" class="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium">
             예, 종료합니다
@@ -98,7 +104,7 @@
   <header class="border-b border-gray-700/50 bg-gray-900/50 backdrop-blur sticky top-0 z-30">
     <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <span class="text-2xl">🎮</span>
+        <span class="text-2xl"><%= typeof panelIcon !== 'undefined' ? panelIcon : '🎮' %></span>
         <h1 class="text-xl font-bold text-white">팰월드 서버 패널</h1>
       </div>
       <div class="flex items-center gap-4">
@@ -400,6 +406,7 @@
 
     // Global variables for shutdown
     let shutdownAction = null; // 'stop' or 'restart'
+    let shutdownCountdownTimer = null; // setInterval ID
 
     // Server actions
     async function serverAction(action) {
@@ -458,8 +465,14 @@
         <p class="font-semibold">현재 <span class="text-green-400">${onlinePlayers.length}명</span>의 사용자가 접속 중입니다:</p>
         <div class="flex flex-wrap gap-2 my-3">${playerListHtml}</div>
         <p class="text-sm text-gray-400">정말로 ${action === 'stop' ? '서버를 종료' : '서버를 재시작'}하시겠습니까?</p>
-        <p class="text-xs text-amber-400 mt-2">⚠️ 60초 후에 서버가 종료되며, 플레이어들에게 공지가 전송됩니다.</p>
+        <p class="text-xs text-amber-400 mt-2">⚠️ 설정한 초 후에 서버가 종료되며, 플레이어들에게 공지가 전송됩니다.</p>
       `;
+
+      // 저장된 종료 대기 시간 로드
+      fetch('/api/panel-config').then(r => r.json()).then(c => {
+        const el = document.getElementById('shutdown-countdown-sec');
+        if (el && c.shutdownCountdownSec) el.value = Math.min(300, Math.max(1, c.shutdownCountdownSec));
+      }).catch(() => {});
 
       modal.classList.remove('hidden');
     }
@@ -470,30 +483,63 @@
     }
 
     async function confirmShutdown() {
+      const action = shutdownAction; // closeShutdownModal()이 null로 만드므로 먼저 저장
+      const countdownInput = document.getElementById('shutdown-countdown-sec');
+      const countdownSec = countdownInput ? Math.min(300, Math.max(1, parseInt(countdownInput.value, 10) || 60)) : 60;
       closeShutdownModal();
-      if (!shutdownAction) return;
+      if (!action) return;
 
       try {
-        // Call stop-with-notice API
-        const res = await fetch('/api/server/stop-with-notice', { method: 'POST' });
+        const res = await fetch('/api/server/stop-with-notice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ countdownSec: countdownSec })
+        });
         const data = await res.json();
 
         if (data.success) {
           showToast(data.message, 'success');
-          // Show force shutdown banner
           document.getElementById('force-shutdown-banner').classList.remove('hidden');
 
-          // If restart, schedule restart after shutdown
-          if (shutdownAction === 'restart') {
-            setTimeout(async () => {
-              await executeServerAction('start');
-              document.getElementById('force-shutdown-banner').classList.add('hidden');
-            }, 70000); // 60s + 10s = 70s total
+          const countdownEl = document.getElementById('shutdown-countdown-text');
+          const sec = data.countdownSec != null ? data.countdownSec : countdownSec;
+          const totalMs = (10 + sec) * 1000;
+          const startTime = Date.now();
+
+          if (shutdownCountdownTimer) clearInterval(shutdownCountdownTimer);
+          shutdownCountdownTimer = setInterval(() => {
+            const elapsed = Date.now() - startTime;
+            const remainingSec = Math.ceil((totalMs - elapsed) / 1000);
+            if (remainingSec <= 0) {
+              clearInterval(shutdownCountdownTimer);
+              shutdownCountdownTimer = null;
+              countdownEl.textContent = '종료 중...';
+              return;
+            }
+            // 10초 미만이면 처음부터 "N초 뒤 종료" 표시
+            if (remainingSec <= 10 || sec < 10) {
+              countdownEl.textContent = '⚠️ ' + remainingSec + '초 뒤 종료됩니다!';
+            } else {
+              countdownEl.textContent = '⏳ 서버가 ' + remainingSec + '초 후 종료됩니다...';
+            }
+          }, 1000);
+          if (sec < 10) {
+            countdownEl.textContent = '⚠️ ' + (sec + 10) + '초 뒤 종료됩니다!';
           } else {
-            // Hide banner after shutdown completes
-            setTimeout(() => {
+            countdownEl.textContent = '⏳ 서버가 ' + (sec + 10) + '초 후 종료됩니다...';
+          }
+
+          if (action === 'restart') {
+            setTimeout(async () => {
+              if (shutdownCountdownTimer) { clearInterval(shutdownCountdownTimer); shutdownCountdownTimer = null; }
               document.getElementById('force-shutdown-banner').classList.add('hidden');
-            }, 70000);
+              await executeServerAction('start');
+            }, totalMs);
+          } else {
+            setTimeout(() => {
+              if (shutdownCountdownTimer) { clearInterval(shutdownCountdownTimer); shutdownCountdownTimer = null; }
+              document.getElementById('force-shutdown-banner').classList.add('hidden');
+            }, totalMs);
           }
 
           setTimeout(refreshStatus, 2000);
@@ -503,13 +549,12 @@
       } catch (e) {
         showToast('종료 요청 실패: ' + e.message, 'error');
       }
-
-      shutdownAction = null;
     }
 
     async function forceShutdownNow() {
       if (!confirm('정말로 지금 바로 강제 종료하시겠습니까?\n플레이어들이 저장할 시간이 없습니다.')) return;
 
+      if (shutdownCountdownTimer) { clearInterval(shutdownCountdownTimer); shutdownCountdownTimer = null; }
       try {
         const res = await fetch('/api/server/force-stop', { method: 'POST' });
         const data = await res.json();
@@ -909,12 +954,14 @@
         const data = await res.json();
         if (data.success) {
           showToast('프리셋 "' + data.name + '" 저장 완료!');
-          closePresetSaveModal();
         } else {
           showToast(data.error || '저장 실패', 'error');
         }
       } catch (e) {
         showToast('저장 실패: ' + e.message, 'error');
+      } finally {
+        closePresetSaveModal();
+        loadPresetList();
       }
     }
 
