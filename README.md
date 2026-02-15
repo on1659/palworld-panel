@@ -213,6 +213,8 @@ PAL_BACKUP_ROOT/
 └── ...
 ```
 
+**Palback 폴더 (스케줄러 백업):** `Palback/`의 `backup.bat`을 Windows 작업 스케줄러에 등록해 쓰는 경우, `palback_config.cmd.example`을 `palback_config.cmd`로 복사한 뒤 `PAL_SAVE_PATH`·`PAL_BACKUP_ROOT`를 설정하세요. `palback_config.cmd`는 Git에 올리지 마세요.
+
 ## 접속 통계 & 데이터
 
 플레이어 접속 데이터는 `data/palworld.db` (SQLite)에 저장됩니다.
@@ -242,6 +244,50 @@ PAL_BACKUP_ROOT/
 | 기타 | 낮/밤 속도, 건축물 피해, 멀티플레이 설정 |
 
 서버 실행 중에는 REST API에서 현재 적용된 값을 가져오고, 정지 상태에서는 ini 파일에서 읽습니다.
+
+## 로그
+
+패널의 모든 주요 동작은 `data/panel_server_log.txt`에 기록됩니다.
+
+```
+[2026-02-15 14:30:15] [수동] 서버 시작 요청
+[2026-02-15 14:30:15] 서버 시작 중...
+[2026-02-15 15:00:00] [알림] 감자튀김님 접속 1시간 경과 공지
+[2026-02-15 06:00:00] [자동재시작] 접속자 없음 → 서버 재시작 시작
+```
+
+| 태그 | 설명 |
+|------|------|
+| `[수동]` | 웹 패널에서 버튼으로 조작 |
+| `[자동재시작]` | 매일 오전 6시 자동 재시작 |
+| `[공지]` | 종료 전 인게임 공지 전송 |
+| `[알림]` | 접속 시간 알림 (매 시간) |
+| `[REST-API]` | REST API 통신 |
+| `[복원]` | 패널 시작 시 세션 복원 |
+
+- 서버 실행 여부와 관계없이 항상 파일에 기록
+- 웹 UI에는 최근 50줄만 표시
+
+## 외부 접속 (ngrok)
+
+패널을 외부에서 접속하려면 [ngrok](https://ngrok.com/)을 사용할 수 있습니다.
+포트 포워딩 없이 HTTPS 터널을 통해 외부에서 패널에 접속할 수 있어 편리합니다.
+
+### 설정 방법
+
+1. [ngrok 가입](https://dashboard.ngrok.com/signup) 후 설치
+2. 인증 토큰 설정:
+   ```bash
+   ngrok config add-authtoken YOUR_AUTH_TOKEN
+   ```
+3. 패널 포트에 터널 실행:
+   ```bash
+   ngrok http 3000
+   ```
+4. 출력된 `https://xxxx.ngrok-free.dev` 주소로 외부 접속
+
+> **참고:** 이 프로젝트에서는 `StartServer.bat`에서 패널과 ngrok 터널을 함께 실행하도록 설정되어 있습니다.
+> 필수는 아니며, 로컬에서만 사용한다면 ngrok 없이 `npm start`만으로 충분합니다.
 
 ## 참고
 

@@ -658,16 +658,17 @@ let stdoutLineBuf = '';
 let stderrLineBuf = '';
 
 function addLog(line) {
-  const timestamp = new Date().toLocaleTimeString('ko-KR');
-  const entry = `[${timestamp}] ${line}`;
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('ko-KR');
+  const entry = `[${timeStr}] ${line}`;
   serverLogs.push(entry);
   if (serverLogs.length > MAX_LOG_LINES) serverLogs.shift();
-  if (serverProcess) {
-    try {
-      if (!fs.existsSync(PLAYER_DATA_DIR)) fs.mkdirSync(PLAYER_DATA_DIR, { recursive: true });
-      fs.appendFileSync(PANEL_SERVER_LOG_FILE, entry + '\n', 'utf-8');
-    } catch (_) {}
-  }
+  try {
+    if (!fs.existsSync(PLAYER_DATA_DIR)) fs.mkdirSync(PLAYER_DATA_DIR, { recursive: true });
+    const pad = (n) => String(n).padStart(2, '0');
+    const fileTs = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    fs.appendFileSync(PANEL_SERVER_LOG_FILE, `[${fileTs}] ${line}\n`, 'utf-8');
+  } catch (_) {}
 }
 
 // --- Player state (REST API only) ---
@@ -1265,25 +1266,32 @@ app.delete('/api/presets/:name', requireAuth, (req, res) => {
   }
 });
 
-app.post('/api/server/start', requireAuth, (req, res) => res.json(startServer()));
+app.post('/api/server/start', requireAuth, (req, res) => {
+  addLog('[수동] 서버 시작 요청');
+  const result = startServer();
+  res.json(result);
+});
 app.post('/api/server/stop', requireAuth, async (req, res) => {
+  addLog('[수동] 서버 종료 요청');
   const result = await stopServer();
   res.json(result);
 });
 app.post('/api/server/restart', requireAuth, async (req, res) => {
+  addLog('[수동] 서버 재시작 요청');
   await stopServer();
-  // REST API 정상 종료 사용 시 30초 대기, 그 외 3초
   const waitTime = REST_API_ENABLED && restApiClient.isAvailable ? 33000 : 3000;
   await new Promise(r => setTimeout(r, waitTime));
   res.json(startServer());
 });
 
 app.post('/api/server/stop-with-notice', requireAuth, async (req, res) => {
+  addLog('[수동] 공지 후 서버 종료 요청');
   const result = await stopServerWithNotice();
   res.json(result);
 });
 
 app.post('/api/server/force-stop', requireAuth, async (req, res) => {
+  addLog('[수동] 서버 강제 종료 요청');
   const result = await forceStopServer();
   res.json(result);
 });

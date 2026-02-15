@@ -1,7 +1,7 @@
 @echo off
 REM === 스케줄러에 Palworld 백업 작업 등록 ===
-REM 백업 스크립트 경로
-set "BACKUP_BAT=C:\Users\on165\Desktop\Palback\backup.bat"
+REM 백업 스크립트 경로 (이 bat 파일이 있는 폴더의 backup.bat 사용)
+set "BACKUP_BAT=%~dp0backup.bat"
 
 REM 작업 이름
 set "TASK_NAME=Palworld Backup"
