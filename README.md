@@ -292,6 +292,12 @@ Cloudflare 방식은 [Cloudflare Tunnel(cloudflared)](https://developers.cloudfl
 
 > **참고:** 이 프로젝트에서는 `StartServer.bat`에서 패널과 ngrok 터널을 함께 실행하도록 설정되어 있습니다. 로컬 전용이면 ngrok 없이 `npm start`만으로 충분합니다.
 
+## 개발 계획
+
+- **서버 업데이트 (SteamCMD)**  
+  SteamCMD를 이용해 패널에서 원클릭으로 팰월드 서버를 업데이트하는 기능에 대한 개발 계획 문서가 `docs/`에 있습니다. **현재는 계획만 세워둔 상태이며, 아직 구현되지 않았습니다.**  
+  → [docs/glistening-twirling-newell.md](docs/glistening-twirling-newell.md)
+
 ## 참고
 
 - Windows 전용 (PalServer.exe 프로세스 관리, robocopy 백업)
